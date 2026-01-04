@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-01-03T23:51:39.489734",
+  "seed": 42,
+  "domain": "education",
+  "splits": {
+    "train": {
+      "total": 80,
+      "pro": 40,
+      "con": 40,
+      "unique_topics": 10,
+      "avg_output_length": 162.6625
+    },
+    "val": {
+      "total": 10,
+      "pro": 4,
+      "con": 6,
+      "unique_topics": 8,
+      "avg_output_length": 162.4
+    },
+    "test": {
+      "total": 10,
+      "pro": 6,
+      "con": 4,
+      "unique_topics": 6,
+      "avg_output_length": 163.8
+    }
+  },
+  "topics": [
+    "Should universities use affirmative action in admissions?",
+    "Should coding be mandatory in K-12 curriculum?",
+    "Should homework be abolished in primary education?",
+    "Should AI tutoring systems replace human tutors?",
+    "Should teachers be evaluated primarily based on student test scores?",
+    "Should schools implement year-round education?",
+    "Should schools ban mobile phones entirely?",
+    "Should standardized testing be the primary method of student assessment?",
+    "Should universities adopt fully online degree programs?",
+    "Should student loan debt be forgiven?"
+  ]
+}

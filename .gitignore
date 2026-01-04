@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.env.*
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Tools / caches / logs
+*.log
+.pytest_cache/
+coverage/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Large generated data, models, runs
+/data/raw/
+/runs/
+/models/
+/indexes/
+/qlora_adapter_test/
+/qlora_test_out/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# Tokenizer/optimizer artifacts (often generated)
+added_tokens.json
+tokenizer.json
+tokenizer_config.json
+optimizer.pt
+scaler.pt
+scheduler.pt
+rng_state.pth
+trainer_state.json
+
+# Build outputs, coverage
+coverage.xml
+*.egg-info/
+*.egg
+
+# Misc
+*.sqlite3
+*.db
+
+# Ensure local overrides are ignored
+.local
+
+# Optional: ignore env-specific lock files
+Pipfile.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

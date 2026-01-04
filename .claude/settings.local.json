@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(done)",
+      "Bash(cat:*)",
+      "Bash(tree:*)",
+      "Bash(head:*)",
+      "Bash(du:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python scripts/verify_base_model.py:*)",
+      "Bash(python scripts/generate_education_dataset.py:*)",
+      "Bash(python scripts/train_education_adapter.py:*)",
+      "Bash(python scripts/evaluate_education_adapter.py:*)",
+      "Bash(find:*)"
+    ]
+  }
+}
