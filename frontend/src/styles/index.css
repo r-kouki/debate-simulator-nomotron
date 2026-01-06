@@ -1,0 +1,506 @@
+@import "98.css";
+
+/* =============================================
+   Theme Variables - Light Mode (Softer Win98)
+   ============================================= */
+:root {
+  /* Desktop & Background */
+  --desktop-bg: #5f9ea0;           /* Softer teal (was #008080) */
+  --desktop-pattern-light: rgba(255, 255, 255, 0.06);
+  --desktop-pattern-dark: rgba(0, 0, 0, 0.06);
+  
+  /* Surfaces */
+  --surface: #d4d4d4;              /* Softer silver (was #c0c0c0) */
+  --surface-light: #e8e8e8;
+  --surface-dark: #b0b0b0;
+  --surface-inset: #ffffff;
+  
+  /* Text Colors */
+  --text-primary: #2a2a2a;         /* Softer black */
+  --text-secondary: #505050;
+  --text-on-accent: #ffffff;
+  --text-desktop: #ffffff;
+  
+  /* Titlebar Gradient */
+  --titlebar-start: #3d5a80;       /* Muted navy (was #000080) */
+  --titlebar-end: #5b8dc9;         /* Softer blue */
+  --titlebar-inactive-start: #808080;
+  --titlebar-inactive-end: #a0a0a0;
+  
+  /* Borders */
+  --border-light: #ffffff;
+  --border-dark: #808080;
+  --border-darkest: #404040;
+  --border-inset: #808080;
+  
+  /* Accents */
+  --accent-primary: #000080;
+  --accent-success: #00a000;
+  --accent-success-light: #00d000;
+  --accent-warning: #ffa500;
+  --accent-error: #c92a2a;
+  
+  /* Components */
+  --toast-bg: #ffffe1;
+  --toast-border: #2a2a2a;
+  --dialog-overlay: rgba(0, 0, 0, 0.25);
+  --status-pill-bg: #2a4a7a;
+  
+  /* XP Bar */
+  --xp-bar-bg: #606060;
+  --xp-bar-fill-start: #00a000;
+  --xp-bar-fill-end: #00d000;
+  
+  /* Scrollbar */
+  --scrollbar-track: #d4d4d4;
+  --scrollbar-thumb: #a0a0a0;
+  
+  font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, Verdana, sans-serif;
+  color: var(--text-primary);
+  background: var(--desktop-bg);
+}
+
+/* =============================================
+   Theme Variables - Dark Mode
+   ============================================= */
+[data-theme="dark"] {
+  /* Desktop & Background */
+  --desktop-bg: #1a1a2e;           /* Dark navy */
+  --desktop-pattern-light: rgba(255, 255, 255, 0.03);
+  --desktop-pattern-dark: rgba(0, 0, 0, 0.15);
+  
+  /* Surfaces */
+  --surface: #2d2d44;              /* Dark surface */
+  --surface-light: #3a3a55;
+  --surface-dark: #1f1f30;
+  --surface-inset: #1a1a28;
+  
+  /* Text Colors */
+  --text-primary: #e2e2e2;         /* Light text */
+  --text-secondary: #a0a0b0;
+  --text-on-accent: #ffffff;
+  --text-desktop: #c8c8d0;
+  
+  /* Titlebar Gradient */
+  --titlebar-start: #4a5568;       /* Dark slate */
+  --titlebar-end: #667eea;         /* Soft purple-blue */
+  --titlebar-inactive-start: #3a3a55;
+  --titlebar-inactive-end: #4a4a66;
+  
+  /* Borders */
+  --border-light: #4a4a66;
+  --border-dark: #1a1a28;
+  --border-darkest: #0a0a14;
+  --border-inset: #1a1a28;
+  
+  /* Accents */
+  --accent-primary: #667eea;
+  --accent-success: #48bb78;
+  --accent-success-light: #68d391;
+  --accent-warning: #ecc94b;
+  --accent-error: #fc8181;
+  
+  /* Components */
+  --toast-bg: #2d2d44;
+  --toast-border: #4a4a66;
+  --dialog-overlay: rgba(0, 0, 0, 0.5);
+  --status-pill-bg: #667eea;
+  
+  /* XP Bar */
+  --xp-bar-bg: #1a1a28;
+  --xp-bar-fill-start: #48bb78;
+  --xp-bar-fill-end: #68d391;
+  
+  /* Scrollbar */
+  --scrollbar-track: #1a1a28;
+  --scrollbar-thumb: #4a4a66;
+}
+
+/* =============================================
+   Base Styles
+   ============================================= */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--desktop-bg);
+  color: var(--text-primary);
+}
+
+#root {
+  height: 100vh;
+}
+
+/* =============================================
+   Desktop
+   ============================================= */
+.desktop {
+  position: relative;
+  height: 100vh;
+  background-image: radial-gradient(circle at 1px 1px, var(--desktop-pattern-light) 1px, transparent 0),
+    radial-gradient(circle at 3px 3px, var(--desktop-pattern-dark) 1px, transparent 0);
+  background-size: 4px 4px;
+}
+
+.desktop-area {
+  position: relative;
+  height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
+/* =============================================
+   Taskbar
+   ============================================= */
+.taskbar {
+  height: 40px;
+  padding: 4px;
+  background: var(--surface);
+  border-top: 2px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.taskbar .task-list {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.task-button {
+  min-width: 120px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: bold;
+}
+
+/* =============================================
+   Start Menu
+   ============================================= */
+.start-menu {
+  position: absolute;
+  left: 4px;
+  bottom: 44px;
+  width: 220px;
+  z-index: 1000;
+}
+
+.start-menu .menu {
+  width: 100%;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* =============================================
+   Desktop Icons
+   ============================================= */
+.desktop-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 80px);
+  gap: 12px;
+  padding: 12px;
+}
+
+.desktop-icon {
+  text-align: center;
+  color: var(--text-desktop);
+  cursor: default;
+}
+
+.desktop-icon button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* =============================================
+   Context Menu
+   ============================================= */
+.context-menu {
+  position: absolute;
+  z-index: 1200;
+}
+
+/* =============================================
+   Window Styles
+   ============================================= */
+.window-body {
+  padding: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.window-header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* =============================================
+   Menu Bar
+   ============================================= */
+.menu-bar {
+  display: flex;
+  gap: 10px;
+  padding: 2px 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.menu-bar button {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+/* =============================================
+   Tabs
+   ============================================= */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tabs button {
+  padding: 4px 10px;
+}
+
+/* =============================================
+   Panel
+   ============================================= */
+.panel {
+  border: 2px inset var(--border-light);
+  padding: 8px;
+  background: var(--surface-inset);
+  color: var(--text-primary);
+}
+
+/* =============================================
+   XP Bar
+   ============================================= */
+.xp-bar {
+  position: relative;
+  height: 16px;
+  background: var(--xp-bar-bg);
+  border: 1px solid var(--border-darkest);
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--xp-bar-fill-start), var(--xp-bar-fill-end));
+  animation: xp-pulse 2s ease-in-out infinite;
+}
+
+@keyframes xp-pulse {
+  0% {
+    filter: brightness(0.9);
+  }
+  50% {
+    filter: brightness(1.1);
+  }
+  100% {
+    filter: brightness(0.9);
+  }
+}
+
+/* =============================================
+   Toast Notifications
+   ============================================= */
+.toast-container {
+  position: absolute;
+  right: 10px;
+  bottom: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 1500;
+}
+
+.toast {
+  background: var(--toast-bg);
+  border: 2px solid var(--toast-border);
+  padding: 8px 10px;
+  min-width: 220px;
+  color: var(--text-primary);
+}
+
+/* =============================================
+   Status Pill
+   ============================================= */
+.status-pill {
+  background: var(--status-pill-bg);
+  color: var(--text-on-accent);
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+/* =============================================
+   Transcript
+   ============================================= */
+.transcript {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 2px inset var(--border-light);
+  background: var(--surface-inset);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcript-message {
+  border: 1px solid var(--border-dark);
+  background: var(--surface-light);
+  padding: 6px;
+  color: var(--text-primary);
+}
+
+/* =============================================
+   Timer
+   ============================================= */
+.timer {
+  font-weight: bold;
+}
+
+/* =============================================
+   Dialog Overlay
+   ============================================= */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--dialog-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+/* =============================================
+   Tray
+   ============================================= */
+.tray {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =============================================
+   Icons
+   ============================================= */
+.pixel-icon {
+  width: 32px;
+  height: 32px;
+}
+
+/* =============================================
+   Dark Mode - Window Overrides (98.css)
+   ============================================= */
+[data-theme="dark"] .window {
+  background: var(--surface);
+  box-shadow: inset -1px -1px var(--border-dark), 
+              inset 1px 1px var(--border-light),
+              inset -2px -2px var(--border-darkest),
+              inset 2px 2px var(--surface-light);
+}
+
+[data-theme="dark"] .title-bar {
+  background: linear-gradient(90deg, var(--titlebar-start), var(--titlebar-end));
+}
+
+[data-theme="dark"] .title-bar-text {
+  color: var(--text-on-accent);
+}
+
+[data-theme="dark"] button {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] button:active {
+  background: var(--surface-dark);
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background: var(--surface-inset);
+  color: var(--text-primary);
+  border-color: var(--border-dark);
+}
+
+[data-theme="dark"] fieldset {
+  border-color: var(--border-dark);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] legend {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .status-bar {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .tree-view,
+[data-theme="dark"] ul[role="tree"],
+[data-theme="dark"] [role="listbox"] {
+  background: var(--surface-inset);
+  color: var(--text-primary);
+}
+
+/* =============================================
+   Scrollbar Styling
+   ============================================= */
+::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 1px solid var(--border-dark);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-dark);
+}
+
+/* =============================================
+   Responsive
+   ============================================= */
+@media (max-width: 720px) {
+  .start-menu {
+    width: 180px;
+  }
+
+  .task-button {
+    min-width: 90px;
+  }
+}

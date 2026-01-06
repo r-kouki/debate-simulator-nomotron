@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum DebateStatus {
+  CREATED
+  RUNNING
+  ENDED
+  CANCELLED
+}
+
+enum DebateMode {
+  HUMAN_VS_AI
+  COPS_VS_AI
+  AI_VS_AI
+  HUMAN_VS_HUMAN
+}
+
+enum ParticipantType {
+  HUMAN
+  AI
+  JUDGE
+}
+
+enum Stance {
+  PRO
+  CON
+  MODERATOR
+}
+
+model Player {
+  id        String   @id @default(uuid())
+  username  String
+  avatar    String
+  level     Int
+  xp        Int
+  rankTitle String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  stats     PlayerStats?
+  achievements PlayerAchievement[]
+  history   MatchHistory[]
+  participants Participant[]
+}
+
+model PlayerStats {
+  id           String  @id @default(uuid())
+  playerId     String  @unique
+  wins         Int
+  losses       Int
+  winRate      Float
+  averageScore Float
+  bestStreak   Int
+  topicsPlayed Int
+  player       Player  @relation(fields: [playerId], references: [id])
+}
+
+model Achievement {
+  id          String @id
+  title       String
+  description String
+  players     PlayerAchievement[]
+}
+
+model PlayerAchievement {
+  id            String      @id @default(uuid())
+  playerId      String
+  achievementId String
+  unlocked      Boolean     @default(false)
+  unlockedAt    DateTime?
+  player        Player      @relation(fields: [playerId], references: [id])
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+}
+
+model MatchHistory {
+  id       String   @id @default(uuid())
+  playerId String
+  topic    String
+  mode     String
+  date     DateTime
+  score    Int
+  result   String
+  player   Player @relation(fields: [playerId], references: [id])
+}
+
+model Debate {
+  id          String       @id @default(uuid())
+  mode        DebateMode
+  topic       String
+  rounds      Int
+  turnSeconds Int?
+  status      DebateStatus
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  participants Participant[]
+  turns       Turn[]
+  finalScore  FinalScore?
+  sources     Source[]
+}
+
+model Participant {
+  id        String         @id @default(uuid())
+  debateId  String
+  type      ParticipantType
+  name      String
+  stance    Stance
+  roleLabel String
+  playerId  String?
+  debate    Debate         @relation(fields: [debateId], references: [id])
+  player    Player?        @relation(fields: [playerId], references: [id])
+  turns     Turn[]
+}
+
+model Turn {
+  id            String    @id @default(uuid())
+  debateId      String
+  participantId String
+  roleLabel     String
+  content       String
+  createdAt     DateTime  @default(now())
+  debate        Debate    @relation(fields: [debateId], references: [id])
+  participant   Participant @relation(fields: [participantId], references: [id])
+  scores        TurnScore[]
+  sources       Source[]
+}
+
+model TurnScore {
+  id        String @id @default(uuid())
+  turnId    String
+  clarity   Int
+  logic     Int
+  evidence  Int
+  rebuttal  Int
+  civility  Int
+  relevance Int
+  turn      Turn @relation(fields: [turnId], references: [id])
+}
+
+model FinalScore {
+  id                 String   @id @default(uuid())
+  debateId           String   @unique
+  overallScore       Int
+  winnerParticipantId String?
+  explanation        String
+  highlights         String
+  fallacies          String
+  debate             Debate   @relation(fields: [debateId], references: [id])
+}
+
+model Source {
+  id       String  @id @default(uuid())
+  debateId String?
+  turnId   String?
+  url      String
+  title    String
+  snippet  String
+  usedFor  String
+  debate   Debate? @relation(fields: [debateId], references: [id])
+  turn     Turn?   @relation(fields: [turnId], references: [id])
+}
+
+model TopicCache {
+  id        String   @id @default(uuid())
+  topic     String   @unique
+  summary   String
+  detail    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
