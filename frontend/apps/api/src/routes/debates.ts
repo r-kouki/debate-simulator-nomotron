@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { ZodTypeProvider } from "@fastify/type-provider-zod";
+import { ZodTypeProvider } from "fastify-type-provider-zod";
 import {
   CreateDebateRequestSchema,
   CreateDebateResponseSchema,

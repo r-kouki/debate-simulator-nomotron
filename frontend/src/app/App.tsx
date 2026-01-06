@@ -5,11 +5,13 @@ import { queryClient } from "./queryClient";
 import ToastContainer from "../components/ToastContainer";
 import DialogHost from "../components/DialogHost";
 import { initializeTheme } from "../state/themeStore";
+import { initializeAiTheme } from "../theme";
 
 const App = () => {
-  // Initialize theme on first mount
+  // Initialize themes on first mount
   useEffect(() => {
     initializeTheme();
+    initializeAiTheme();
   }, []);
 
   return (

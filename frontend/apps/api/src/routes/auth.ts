@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { ZodTypeProvider } from "@fastify/type-provider-zod";
+import { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { registerUser, loginUser, getUserFromToken } from "../services/auth";
 

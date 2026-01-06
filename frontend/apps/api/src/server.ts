@@ -7,7 +7,7 @@ import {
   validatorCompiler,
   serializerCompiler,
   jsonSchemaTransform
-} from "@fastify/type-provider-zod";
+} from "fastify-type-provider-zod";
 import { randomUUID } from "node:crypto";
 import { getEnv } from "./utils/env";
 import { registerHealthRoutes } from "./routes/health";
@@ -15,6 +15,7 @@ import { registerTopicRoutes } from "./routes/topics";
 import { registerDebateRoutes } from "./routes/debates";
 import { registerProfileRoutes } from "./routes/profile";
 import { registerAuthRoutes } from "./routes/auth";
+import { registerAgentRoutes } from "./routes/agents";
 
 export const buildServer = () => {
   const env = getEnv();
@@ -60,6 +61,7 @@ export const buildServer = () => {
   registerDebateRoutes(app);
   registerProfileRoutes(app);
   registerAuthRoutes(app);
+  registerAgentRoutes(app);
 
   return app;
 };

@@ -224,3 +224,66 @@ export const JudgeOutputSchema = z.object({
   fallacies: z.array(z.string()),
   achievements: z.array(z.string()).optional()
 });
+
+// =============================================
+// Agent Framework Schemas
+// =============================================
+
+export const AgentRequestSchema = z.object({
+  input: z.string().min(1).max(1000),
+  context: z.record(z.string(), z.unknown()).optional()
+});
+
+export const AgentSuccessResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.unknown()
+});
+
+export const AgentErrorResponseSchema = z.object({
+  ok: z.literal(false),
+  error: z.object({
+    code: z.enum(["BAD_REQUEST", "LLM_ERROR", "VALIDATION_FAILED", "SERVER_ERROR", "AGENT_NOT_FOUND"]),
+    message: z.string()
+  })
+});
+
+export const AgentResponseSchema = z.union([AgentSuccessResponseSchema, AgentErrorResponseSchema]);
+
+// =============================================
+// AiTheme Schema (Theme Agent)
+// =============================================
+
+// Safe font allowlist
+const FONT_ALLOWLIST = ["Tahoma", "Verdana", "Arial", "Trebuchet MS", "Courier New"] as const;
+
+// Color validation: HEX (#RGB, #RRGGBB) or rgb()/rgba()
+const colorPattern = /^(#[0-9A-Fa-f]{3}|#[0-9A-Fa-f]{6}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*[\d.]+\s*\))$/;
+
+// Safe shadow pattern: simple box-shadow (e.g., "2px 2px 0 rgba(0,0,0,0.35)")
+const shadowPattern = /^-?\d+px\s+-?\d+px\s+\d+px?\s+(#[0-9A-Fa-f]{3,6}|rgba?\([^)]+\))$/;
+
+export const AiThemeTokensSchema = z.object({
+  fontFamily: z.enum(FONT_ALLOWLIST),
+  fontSizeBasePx: z.number().min(12).max(20).transform(v => Math.round(Math.min(20, Math.max(12, v)))),
+  bg: z.string().regex(colorPattern, "Invalid color format"),
+  panel: z.string().regex(colorPattern, "Invalid color format"),
+  text: z.string().regex(colorPattern, "Invalid color format"),
+  mutedText: z.string().regex(colorPattern, "Invalid color format"),
+  primary: z.string().regex(colorPattern, "Invalid color format"),
+  primaryText: z.string().regex(colorPattern, "Invalid color format"),
+  border: z.string().regex(colorPattern, "Invalid color format"),
+  radiusPx: z.number().min(0).max(16).transform(v => Math.round(Math.min(16, Math.max(0, v)))),
+  shadow: z.string().regex(shadowPattern, "Invalid shadow format").catch("2px 2px 0 rgba(0,0,0,0.35)")
+}).strict();
+
+export const AiThemeMetaSchema = z.object({
+  prompt: z.string(),
+  model: z.string(),
+  createdAt: z.string()
+}).optional();
+
+export const AiThemeSchema = z.object({
+  name: z.string().min(1).max(50),
+  tokens: AiThemeTokensSchema,
+  meta: AiThemeMetaSchema
+}).strict();

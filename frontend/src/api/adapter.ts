@@ -1,6 +1,7 @@
 import {
   LeaderboardRequest,
   LeaderboardResponse,
+  NextTurnResponse,
   PlayerProfileResponse,
   ScoreDebateRequest,
   ScoreDebateResponse,
@@ -26,6 +27,7 @@ export type ApiAdapter = {
   getTopic: (id: string) => Promise<TopicDetail>;
   startDebate: (payload: StartDebateRequest) => Promise<StartDebateResponse>;
   sendTurn: (payload: SendTurnRequest) => Promise<SendTurnResponse>;
+  nextTurn: (debateId: string) => Promise<NextTurnResponse>;
   scoreDebate: (payload: ScoreDebateRequest) => Promise<ScoreDebateResponse>;
   getProfile: () => Promise<PlayerProfileResponse>;
   updateProfile: (payload: Partial<PlayerProfileResponse>) => Promise<PlayerProfileResponse>;
@@ -40,6 +42,7 @@ const createFetchAdapter = (baseUrl: string): ApiAdapter => {
     getTopic: (id) => client.get(`/topics/${id}`),
     startDebate: (payload) => client.post("/debates", payload),
     sendTurn: (payload) => client.post(`/debates/${payload.debateId}/turns`, payload),
+    nextTurn: (debateId) => client.post(`/debates/${debateId}/next-turn`, {}),
     scoreDebate: (payload) => client.post(`/debates/${payload.debateId}/score`, payload),
     getProfile: () => client.get("/profile"),
     updateProfile: (payload) => client.post("/profile", payload),
@@ -86,6 +89,7 @@ const withFallback = (primary: ApiAdapter, fallback: ApiAdapter): ApiAdapter => 
     getTopic: (id) => wrap(() => primary.getTopic(id), () => fallback.getTopic(id)),
     startDebate: (payload) => wrap(() => primary.startDebate(payload), () => fallback.startDebate(payload)),
     sendTurn: (payload) => wrap(() => primary.sendTurn(payload), () => fallback.sendTurn(payload)),
+    nextTurn: (debateId) => wrap(() => primary.nextTurn(debateId), () => fallback.nextTurn(debateId)),
     scoreDebate: (payload) => wrap(() => primary.scoreDebate(payload), () => fallback.scoreDebate(payload)),
     getProfile: () => wrap(() => primary.getProfile(), () => fallback.getProfile()),
     updateProfile: (payload) => wrap(() => primary.updateProfile(payload), () => fallback.updateProfile(payload)),

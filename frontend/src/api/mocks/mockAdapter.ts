@@ -1,5 +1,6 @@
 import type {
   LeaderboardResponse,
+  NextTurnResponse,
   PlayerProfileResponse,
   ScoreDebateRequest,
   ScoreDebateResponse,
@@ -95,6 +96,25 @@ export const mockAdapter: ApiAdapter = {
         relevance: randomScore()
       },
       events: ["combo+1"]
+    };
+  },
+  nextTurn: async (_debateId: string): Promise<NextTurnResponse> => {
+    await delay(1500);
+    const turnNumber = Math.floor(Math.random() * 8) + 1;
+    const speaker = turnNumber % 2 === 1 ? "PRO" : "CON";
+    const phase = turnNumber < 3 ? "opening" : turnNumber < 7 ? "rebuttal" : "closing";
+    const messages = [
+      "The evidence clearly shows that this position has significant merit. Studies indicate a strong correlation between the proposed approach and positive outcomes.",
+      "While I understand the opposing view, we must consider the broader implications. Historical data suggests that alternative approaches have often led to better results.",
+      "Let me address the counterargument directly. The assumptions underlying that position fail to account for critical variables in the real-world scenario.",
+      "In conclusion, the preponderance of evidence supports this stance. The logical framework we've established demonstrates clear advantages."
+    ];
+    return {
+      speaker,
+      message: `[${speaker}] ${messages[turnNumber % messages.length]}`,
+      phase,
+      turnNumber,
+      isComplete: turnNumber >= 8
     };
   },
   scoreDebate: async (_payload: ScoreDebateRequest): Promise<ScoreDebateResponse> => {

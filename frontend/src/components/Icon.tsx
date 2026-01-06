@@ -10,7 +10,8 @@ export type IconName =
   | "info"
   | "trophy"
   | "network"
-  | "profile";
+  | "profile"
+  | "palette";
 
 const Icon = ({ name, className }: { name: IconName; className?: string }) => {
   const common = {
@@ -108,6 +109,17 @@ const Icon = ({ name, className }: { name: IconName; className?: string }) => {
         <svg {...common}>
           <circle cx="16" cy="12" r="6" fill="#f2c1a0" stroke="#000" />
           <rect x="8" y="20" width="16" height="8" fill="#0078d7" stroke="#000" />
+        </svg>
+      );
+    case "palette":
+      return (
+        <svg {...common}>
+          <ellipse cx="16" cy="16" rx="12" ry="10" fill="#f5f5dc" stroke="#000" />
+          <circle cx="10" cy="12" r="3" fill="#ff0000" />
+          <circle cx="18" cy="10" r="3" fill="#00ff00" />
+          <circle cx="24" cy="14" r="3" fill="#0000ff" />
+          <circle cx="12" cy="20" r="3" fill="#ffff00" />
+          <circle cx="20" cy="20" r="2" fill="#ff00ff" />
         </svg>
       );
     default:

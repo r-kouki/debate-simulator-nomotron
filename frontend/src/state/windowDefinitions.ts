@@ -11,7 +11,8 @@ export type WindowType =
   | "about"
   | "connection-status"
   | "login"
-  | "leaderboard";
+  | "leaderboard"
+  | "theme-console";
 
 export type WindowDefinition = {
   title: string;
@@ -23,22 +24,22 @@ export const windowDefinitions: Record<WindowType, WindowDefinition> = {
   "new-debate": {
     title: "New Debate",
     icon: "debate",
-    defaultRect: { x: 60, y: 80, width: 420, height: 420 }
+    defaultRect: { x: 60, y: 60, width: 520, height: 540 }
   },
   "debate-session": {
     title: "Debate Session",
     icon: "chat",
-    defaultRect: { x: 120, y: 90, width: 620, height: 520 }
+    defaultRect: { x: 80, y: 50, width: 800, height: 640 }
   },
   "match-results": {
     title: "Match Results",
     icon: "trophy",
-    defaultRect: { x: 180, y: 120, width: 520, height: 420 }
+    defaultRect: { x: 150, y: 80, width: 600, height: 480 }
   },
   "topic-explorer": {
     title: "Topic Explorer",
     icon: "search",
-    defaultRect: { x: 80, y: 100, width: 700, height: 460 }
+    defaultRect: { x: 60, y: 60, width: 800, height: 520 }
   },
   scoreboard: {
     title: "Scoreboard",
@@ -74,6 +75,11 @@ export const windowDefinitions: Record<WindowType, WindowDefinition> = {
     title: "Leaderboard",
     icon: "trophy",
     defaultRect: { x: 100, y: 60, width: 600, height: 460 }
+  },
+  "theme-console": {
+    title: "Theme Console",
+    icon: "palette",
+    defaultRect: { x: 120, y: 60, width: 560, height: 600 }
   }
 };
 

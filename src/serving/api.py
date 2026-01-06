@@ -2,10 +2,14 @@
 FastAPI server for the debate simulator.
 
 Provides REST API endpoints for the React frontend.
+Includes streaming support for real-time chat-like debate experience.
 """
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import asyncio
+import json
 
 from src.serving.models import (
     HealthResponse,
@@ -99,15 +103,42 @@ async def next_turn(debate_id: str):
 
 @app.post("/debates/{debate_id}/turns", response_model=SendTurnResponse)
 async def send_turn(debate_id: str, request: SendTurnRequest):
-    """Send a debate turn and get AI response."""
+    """Send a debate turn and get AI response (fast, chat-like)."""
     # Ensure debate_id matches
     if request.debateId != debate_id:
         request.debateId = debate_id
 
     try:
+        # Use optimized fast response
         return debate_service.send_turn(request)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/debates/{debate_id}/turns/stream")
+async def send_turn_stream(debate_id: str, request: SendTurnRequest):
+    """Send a debate turn with streaming response for real-time chat feel."""
+    if request.debateId != debate_id:
+        request.debateId = debate_id
+
+    async def generate():
+        try:
+            # Get the response (in future, implement token-by-token streaming)
+            response = debate_service.send_turn(request)
+            
+            # Stream the message word by word for chat-like feel
+            words = response.aiMessage.split()
+            for i, word in enumerate(words):
+                yield f"data: {json.dumps({'type': 'word', 'content': word + ' '})}\n\n"
+                await asyncio.sleep(0.05)  # Small delay for smooth streaming
+            
+            # Send scores at the end
+            yield f"data: {json.dumps({'type': 'scores', 'scores': response.updatedScores.model_dump()})}\n\n"
+            yield "data: {\"type\": \"done\"}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/debates/{debate_id}/score", response_model=ScoreDebateResponse)

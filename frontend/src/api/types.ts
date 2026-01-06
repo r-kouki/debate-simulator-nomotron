@@ -71,6 +71,14 @@ export type ScoreDebateResponse = {
   achievementsUnlocked?: string[];
 };
 
+export type NextTurnResponse = {
+  speaker: string;
+  message: string;
+  phase: string;
+  turnNumber: number;
+  isComplete: boolean;
+};
+
 export type PlayerProfile = {
   username: string;
   avatar: string;
@@ -144,4 +152,58 @@ export type LeaderboardResponse = {
   totalPlayers: number;
   page: number;
   pageSize: number;
+};
+
+// =============================================
+// Agent Framework Types
+// =============================================
+
+export type AgentRequest = {
+  input: string;
+  context?: Record<string, unknown>;
+};
+
+export type AgentSuccessResponse = {
+  ok: true;
+  data: unknown;
+};
+
+export type AgentErrorResponse = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+  };
+};
+
+export type AgentResponse = AgentSuccessResponse | AgentErrorResponse;
+
+// =============================================
+// AiTheme Types (Theme Agent)
+// =============================================
+
+export type AiThemeTokens = {
+  fontFamily: "Tahoma" | "Verdana" | "Arial" | "Trebuchet MS" | "Courier New";
+  fontSizeBasePx: number;
+  bg: string;
+  panel: string;
+  text: string;
+  mutedText: string;
+  primary: string;
+  primaryText: string;
+  border: string;
+  radiusPx: number;
+  shadow: string;
+};
+
+export type AiThemeMeta = {
+  prompt: string;
+  model: string;
+  createdAt: string;
+};
+
+export type AiTheme = {
+  name: string;
+  tokens: AiThemeTokens;
+  meta?: AiThemeMeta;
 };

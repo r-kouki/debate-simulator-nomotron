@@ -24,7 +24,13 @@ import {
   TopicDetailSchema,
   TopicSearchResponseSchema,
   TopicSummarySchema,
-  UpdateProfileRequestSchema
+  UpdateProfileRequestSchema,
+  AgentRequestSchema,
+  AgentSuccessResponseSchema,
+  AgentErrorResponseSchema,
+  AgentResponseSchema,
+  AiThemeSchema,
+  AiThemeTokensSchema
 } from "./schemas";
 
 export type DebateMode = z.infer<typeof DebateModeSchema>;
@@ -52,3 +58,9 @@ export type LeaderboardResponse = z.infer<typeof LeaderboardResponseSchema>;
 export type ResearchOutput = z.infer<typeof ResearchOutputSchema>;
 export type DebaterOutput = z.infer<typeof DebaterOutputSchema>;
 export type JudgeOutput = z.infer<typeof JudgeOutputSchema>;
+export type AgentRequest = z.infer<typeof AgentRequestSchema>;
+export type AgentSuccessResponse = z.infer<typeof AgentSuccessResponseSchema>;
+export type AgentErrorResponse = z.infer<typeof AgentErrorResponseSchema>;
+export type AgentResponse = z.infer<typeof AgentResponseSchema>;
+export type AiTheme = z.infer<typeof AiThemeSchema>;
+export type AiThemeTokens = z.infer<typeof AiThemeTokensSchema>;

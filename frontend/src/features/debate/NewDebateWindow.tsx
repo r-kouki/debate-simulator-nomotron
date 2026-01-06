@@ -1,10 +1,25 @@
 import { useEffect, useState } from "react";
 import MenuBar from "../../components/MenuBar";
+import Tabs from "../../components/Tabs";
 import { useSettingsStore } from "../../state/settingsStore";
 import { useDebateStore } from "../../state/debateStore";
 import { useStartDebate } from "../../api/hooks";
 import { useWindowStore } from "../../state/windowStore";
 import { useNotificationStore } from "../../state/notificationStore";
+
+type DebateMode = "human-vs-ai" | "cops-vs-ai" | "ai-vs-ai";
+
+const MODE_TABS = ["Human vs AI", "Cops vs AI", "AI vs AI"];
+const MODE_MAP: Record<string, DebateMode> = {
+  "Human vs AI": "human-vs-ai",
+  "Cops vs AI": "cops-vs-ai",
+  "AI vs AI": "ai-vs-ai"
+};
+const REVERSE_MODE_MAP: Record<DebateMode, string> = {
+  "human-vs-ai": "Human vs AI",
+  "cops-vs-ai": "Cops vs AI",
+  "ai-vs-ai": "AI vs AI"
+};
 
 const NewDebateWindow = () => {
   const settings = useSettingsStore();
@@ -72,33 +87,11 @@ const NewDebateWindow = () => {
       <MenuBar items={["File", "Edit", "View", "Help"]} />
       <fieldset>
         <legend>Mode</legend>
-        <label>
-          <input
-            type="radio"
-            name="mode"
-            checked={mode === "human-vs-ai"}
-            onChange={() => setMode("human-vs-ai")}
-          />
-          Human vs AI
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="mode"
-            checked={mode === "cops-vs-ai"}
-            onChange={() => setMode("cops-vs-ai")}
-          />
-          Cops vs AI (2 humans)
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="mode"
-            checked={mode === "ai-vs-ai"}
-            onChange={() => setMode("ai-vs-ai")}
-          />
-          AI vs AI (Spectator)
-        </label>
+        <Tabs
+          tabs={MODE_TABS}
+          active={REVERSE_MODE_MAP[mode]}
+          onChange={(tab) => setMode(MODE_MAP[tab])}
+        />
       </fieldset>
 
       {mode === "cops-vs-ai" && (

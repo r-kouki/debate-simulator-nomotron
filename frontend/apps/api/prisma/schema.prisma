@@ -7,32 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DebateStatus {
-  CREATED
-  RUNNING
-  ENDED
-  CANCELLED
-}
-
-enum DebateMode {
-  HUMAN_VS_AI
-  COPS_VS_AI
-  AI_VS_AI
-  HUMAN_VS_HUMAN
-}
-
-enum ParticipantType {
-  HUMAN
-  AI
-  JUDGE
-}
-
-enum Stance {
-  PRO
-  CON
-  MODERATOR
-}
-
 model Player {
   id        String   @id @default(uuid())
   username  String
@@ -90,11 +64,11 @@ model MatchHistory {
 
 model Debate {
   id          String       @id @default(uuid())
-  mode        DebateMode
+  mode        String       // DebateMode: HUMAN_VS_AI | COPS_VS_AI | AI_VS_AI | HUMAN_VS_HUMAN
   topic       String
   rounds      Int
   turnSeconds Int?
-  status      DebateStatus
+  status      String       // DebateStatus: CREATED | RUNNING | ENDED | CANCELLED
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   participants Participant[]
@@ -106,9 +80,9 @@ model Debate {
 model Participant {
   id        String         @id @default(uuid())
   debateId  String
-  type      ParticipantType
+  type      String         // ParticipantType: HUMAN | AI | JUDGE
   name      String
-  stance    Stance
+  stance    String         // Stance: PRO | CON | MODERATOR
   roleLabel String
   playerId  String?
   debate    Debate         @relation(fields: [debateId], references: [id])

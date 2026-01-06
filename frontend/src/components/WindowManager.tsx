@@ -14,6 +14,7 @@ import TopicExplorerWindow from "../features/topics/TopicExplorerWindow";
 import ScoreboardWindow from "../features/profile/ScoreboardWindow";
 import LoginWindow from "../features/auth/LoginWindow";
 import LeaderboardWindow from "../features/leaderboard/LeaderboardWindow";
+import ThemeConsoleWindow from "../features/theme/ThemeConsoleWindow";
 
 const windowComponents: Record<WindowType, ComponentType> = {
   "new-debate": NewDebateWindow,
@@ -26,7 +27,8 @@ const windowComponents: Record<WindowType, ComponentType> = {
   about: AboutWindow,
   "connection-status": ConnectionStatusWindow,
   login: LoginWindow,
-  leaderboard: LeaderboardWindow
+  leaderboard: LeaderboardWindow,
+  "theme-console": ThemeConsoleWindow
 };
 
 const WindowManager = ({ bounds }: { bounds: Rect }) => {

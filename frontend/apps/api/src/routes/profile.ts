@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { ZodTypeProvider } from "@fastify/type-provider-zod";
+import { ZodTypeProvider } from "fastify-type-provider-zod";
 import { LeaderboardResponseSchema, PlayerProfileSchema, UpdateProfileRequestSchema } from "@debate/contracts";
 import { prisma } from "../services/db";
 import { createPlayerIfMissing } from "../services/gamification";

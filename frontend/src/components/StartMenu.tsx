@@ -28,6 +28,7 @@ const StartMenu = ({ onClose }: { onClose: () => void }) => {
         ]
       },
       { label: "Settings", action: () => openWindow("settings") },
+      { label: "Theme Console", action: () => openWindow("theme-console") },
       { label: "Help", action: () => openWindow("help") },
       { label: "About", action: () => openWindow("about") }
     ],

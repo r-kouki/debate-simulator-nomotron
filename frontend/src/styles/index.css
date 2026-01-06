@@ -279,12 +279,31 @@ body {
    ============================================= */
 .tabs {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   margin-bottom: 8px;
 }
 
 .tabs button {
-  padding: 4px 10px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border: 2px outset var(--border-light);
+  font-weight: normal;
+  min-width: 90px;
+  cursor: pointer;
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--surface-inset);
+  border-style: inset;
+  font-weight: bold;
+}
+
+.tabs button:hover:not([aria-selected="true"]) {
+  background: var(--surface-hover, #e8e8e8);
+}
+
+.tabs button:active {
+  border-style: inset;
 }
 
 /* =============================================
@@ -503,4 +522,54 @@ body {
   .task-button {
     min-width: 90px;
   }
+}
+
+/* =============================================
+   AI Theme Overrides
+   When data-ai-theme="active", these CSS variables
+   are applied via JavaScript from theme tokens
+   ============================================= */
+[data-ai-theme="active"] {
+  /* Font overrides */
+  font-family: var(--ai-font-family, inherit);
+  font-size: var(--ai-font-size-base, 14px);
+
+  /* Color overrides */
+  --desktop-bg: var(--ai-bg);
+  --surface: var(--ai-panel);
+  --surface-light: var(--ai-panel);
+  --text-primary: var(--ai-text);
+  --text-secondary: var(--ai-muted-text);
+  --accent-primary: var(--ai-primary);
+  --text-on-accent: var(--ai-primary-text);
+  --border-dark: var(--ai-border);
+
+  /* Shape overrides */
+  --ai-border-radius: var(--ai-radius, 0px);
+}
+
+[data-ai-theme="active"] .window {
+  border-radius: var(--ai-radius, 0px);
+  box-shadow: var(--ai-shadow, 2px 2px 0 rgba(0,0,0,0.35));
+}
+
+[data-ai-theme="active"] button {
+  border-radius: var(--ai-radius, 0px);
+}
+
+[data-ai-theme="active"] .panel {
+  border-radius: var(--ai-radius, 0px);
+  background: var(--ai-panel, var(--surface-inset));
+}
+
+[data-ai-theme="active"] .taskbar {
+  background: var(--ai-panel, var(--surface));
+}
+
+[data-ai-theme="active"] .title-bar {
+  background: linear-gradient(90deg, var(--ai-primary), color-mix(in srgb, var(--ai-primary) 70%, white));
+}
+
+[data-ai-theme="active"] .title-bar-text {
+  color: var(--ai-primary-text, white);
 }

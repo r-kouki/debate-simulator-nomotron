@@ -4,89 +4,113 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-agent debate simulator using LLMs with QLoRA fine-tuning and RAG. Runs entirely locally on NVIDIA GPU for academic evaluation.
+Multi-agent debate simulator using LLMs with QLoRA fine-tuning and RAG. Runs entirely locally on NVIDIA GPU for academic evaluation. Frontend is a Windows 98-themed React app with draggable/resizable windows.
 
 ## Development Commands
 
 ```bash
-# Setup
+# Python setup
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Verify base model loads
 python scripts/verify_base_model.py
 
-# Generate education domain dataset
-python scripts/generate_education_dataset.py
+# Training pipeline
+python scripts/generate_education_dataset.py  # Generate domain dataset
+python scripts/train_education_adapter.py     # Train QLoRA adapter
+python scripts/evaluate_education_adapter.py  # Evaluate adapter vs base
 
-# Train QLoRA adapter
-python scripts/train_education_adapter.py
-
-# Evaluate adapter vs base model
-python scripts/evaluate_education_adapter.py
-
-# Run multi-agent debate
+# Run multi-agent debate (CLI)
 python scripts/run_debate.py "Your debate topic here" --rounds 2
 
 # Generate academic report with plots
 python scripts/generate_academic_report.py
 
-# Run API server (with LLM - takes ~1 min to load model)
-python scripts/run_server.py
+# Python API server
+python scripts/run_server.py             # Full mode (with LLM, ~1 min load)
+python scripts/run_server.py --no-model  # Quick mode (mocked LLM)
 
-# Run API server (without LLM - for quick testing)
-python scripts/run_server.py --no-model
-
-# Run frontend (in separate terminal)
-cd frontend && npm run dev
+# Frontend
+cd frontend && npm install && npm run dev  # http://localhost:5173
+cd frontend && npm run test                 # Vitest tests
+cd frontend && npm run lint                 # ESLint
+cd frontend && npm run build                # Typecheck + production build
 ```
 
 ## Full Stack Development
 
-Run backend and frontend in separate terminals:
+Two backend options:
 
+**Option 1: Python backend** (local LLM with QLoRA adapters)
 ```bash
-# Terminal 1: Backend API (http://localhost:8000)
+# Terminal 1: Python API (http://localhost:8000)
 python scripts/run_server.py
 
 # Terminal 2: Frontend (http://localhost:5173)
 cd frontend && npm run dev
 ```
 
-Then open http://localhost:5173 in your browser.
+**Option 2: Node.js API** (uses OpenRouter for LLM)
+```bash
+# Terminal 1: Build shared contracts
+cd frontend/packages/contracts && npm install && npm run build
+
+# Terminal 2: Node API (http://localhost:4000)
+cd frontend/apps/api
+npm install && cp .env.example .env
+npm run prisma:generate && npm run prisma:migrate
+npm run dev
+
+# Terminal 3: Frontend
+cd frontend && VITE_API_BASE_URL=http://localhost:4000 npm run dev
+```
+
+Without a backend, frontend falls back to mock mode automatically.
 
 ## Architecture
 
 ```
-src/
-├── agents/              # Multi-agent system
-│   ├── base.py          # Agent base class, DebateContext, state machine
-│   ├── router.py        # DomainRouterAgent - topic classification
-│   ├── research.py      # ResearchAgent - BM25 retrieval
-│   ├── debater.py       # DebaterAgent - argument generation with adapters
-│   ├── factcheck.py     # FactCheckAgent - claim verification
-│   ├── judge.py         # JudgeAgent - scoring and winner selection
-│   └── logger.py        # LoggerAgent - artifact persistence
+src/                           # Python backend
+├── agents/                    # Multi-agent system
+│   ├── base.py                # Agent base class, DebateContext, state machine
+│   ├── router.py              # DomainRouterAgent - topic classification
+│   ├── research.py            # ResearchAgent - BM25 retrieval
+│   ├── debater.py             # DebaterAgent - argument generation with adapters
+│   ├── factcheck.py           # FactCheckAgent - claim verification
+│   ├── judge.py               # JudgeAgent - scoring and winner selection
+│   └── logger.py              # LoggerAgent - artifact persistence
 ├── orchestration/
-│   └── pipeline.py      # DebatePipeline - state machine orchestrator
-├── serving/             # REST API server
-│   ├── api.py           # FastAPI endpoints
-│   ├── models.py        # Pydantic request/response models
-│   ├── topics.py        # Topic search and data
-│   ├── profile.py       # JSON-based profile storage
-│   └── debate_service.py # Real-time debate session manager
+│   └── pipeline.py            # DebatePipeline - state machine orchestrator
+├── serving/                   # FastAPI server
+│   ├── api.py                 # REST endpoints
+│   ├── models.py              # Pydantic request/response models
+│   ├── topics.py              # Topic search and data
+│   ├── profile.py             # JSON-based profile storage
+│   └── debate_service.py      # Real-time debate session manager
 ├── train/
-│   ├── dataset.py       # Dataset loading and tokenization
-│   └── trainer.py       # Training loop with metrics
+│   ├── dataset.py             # Dataset loading and tokenization
+│   └── trainer.py             # Training loop with metrics
 └── utils/
-    └── model_loader.py  # Model/adapter loading utilities
+    └── model_loader.py        # Model/adapter loading utilities
 
-frontend/                # React + TypeScript + Vite (Windows 98 theme)
-scripts/                 # Executable scripts for each phase
-models/base/             # Llama 3.1 Nemotron Nano 8B (local)
-models/adapters/         # Trained LoRA adapters by domain
-data/splits/             # Train/val/test JSONL datasets
-runs/                    # train/, eval/, debates/, reports/ outputs
+frontend/                      # React + TypeScript + Vite
+├── src/
+│   ├── api/                   # API adapters (mock, openRouter), React Query hooks
+│   ├── components/            # WindowFrame, Taskbar, Desktop, StartMenu
+│   ├── features/              # debate/, topics/, profile/, settings/
+│   └── state/                 # Zustand stores (window, debate, settings, profile)
+├── apps/api/                  # Optional Fastify backend (OpenRouter LLM)
+│   ├── src/routes/            # health, profile, topics, debates
+│   ├── src/agents/            # researchAgent, debaterAgent, judgeAgent
+│   └── prisma/                # SQLite schema
+└── packages/contracts/        # Shared Zod schemas
+
+scripts/                       # Runnable Python scripts
+models/base/                   # Llama 3.1 Nemotron Nano 8B (local)
+models/adapters/               # Trained LoRA adapters by domain
+data/splits/                   # Train/val/test JSONL datasets
+runs/                          # train/, eval/, debates/, reports/ outputs
 ```
 
 ## Multi-Agent Pipeline
@@ -133,8 +157,34 @@ model, tokenizer = load_model_with_adapter("models/adapters/education")
 - Judge scores and win rates
 - All saved to `runs/reports/`
 
+## Testing
+
+```bash
+# Python smoke tests
+python scripts/verify_base_model.py    # Verifies model loads
+python qlora_smoke_test.py             # Verifies QLoRA works
+
+# Frontend tests
+cd frontend && npm run test            # Vitest
+
+# Node API tests
+cd frontend/apps/api && npm run test   # Requires prisma:migrate first
+```
+
+## Environment Variables
+
+**Frontend** (`frontend/.env`):
+- `VITE_API_BASE_URL` - Backend URL (if missing, uses mocks)
+- `VITE_USE_MOCKS` - Force mock mode (`true`/`false`)
+
+**Node API** (`frontend/apps/api/.env`):
+- `OPENROUTER_API_KEY` - Required for LLM calls
+- `OPENROUTER_MODEL` - Default `nvidia/nemotron-nano-9b-v2:free`
+- `DATABASE_URL` - Default `file:./dev.db`
+
 ## Requirements
 
 - Python 3.12+, NVIDIA GPU with CUDA 12.x
 - ~6GB VRAM for inference, ~10GB for training
 - Base model at `models/base/llama3.1-nemotron-nano-8b-v1/`
+- Node 18+ for frontend
