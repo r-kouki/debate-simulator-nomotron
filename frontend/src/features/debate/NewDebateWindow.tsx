@@ -33,6 +33,7 @@ const NewDebateWindow = () => {
   const [stance, setStance] = useState(debate.stance);
   const [difficulty, setDifficulty] = useState(debate.difficulty || settings.difficultyDefault);
   const [timerSeconds, setTimerSeconds] = useState(debate.timerSeconds || settings.timerSeconds);
+  const [playerName, setPlayerName] = useState(settings.username);
   const [cop1, setCop1] = useState(settings.username);
   const [cop2, setCop2] = useState("Partner");
 
@@ -49,7 +50,7 @@ const NewDebateWindow = () => {
             { name: cop1, type: "human" as const },
             { name: cop2, type: "human" as const }
           ]
-        : [{ name: settings.username, type: "human" as const }];
+        : [{ name: playerName, type: "human" as const }];
 
     const payload = {
       topicId: debate.topicId,
@@ -93,6 +94,18 @@ const NewDebateWindow = () => {
           onChange={(tab) => setMode(MODE_MAP[tab])}
         />
       </fieldset>
+
+      {mode === "human-vs-ai" && (
+        <fieldset>
+          <legend>Player</legend>
+          <div className="field-row-stacked">
+            <label>
+              Your Name
+              <input value={playerName} onChange={(event) => setPlayerName(event.target.value)} />
+            </label>
+          </div>
+        </fieldset>
+      )}
 
       {mode === "cops-vs-ai" && (
         <fieldset>

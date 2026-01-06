@@ -103,17 +103,17 @@ class DebateService:
         params = {
             "easy": {
                 "temperature": 0.8,
-                "max_new_tokens": 150,  # Faster chat-like responses
+                "max_new_tokens": 80,  # Short, punchy responses
                 "style": "casual, conversational, and easy to understand",
             },
             "medium": {
                 "temperature": 0.7,
-                "max_new_tokens": 200,  # Balanced speed and depth
+                "max_new_tokens": 120,  # Concise but substantive
                 "style": "balanced, well-reasoned, using both logic and examples",
             },
             "hard": {
                 "temperature": 0.6,
-                "max_new_tokens": 250,  # Still concise but thorough
+                "max_new_tokens": 160,  # Thorough but focused
                 "style": "rigorous, evidence-based, with sophisticated rhetorical techniques",
             },
         }
