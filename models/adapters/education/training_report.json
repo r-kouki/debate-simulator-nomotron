@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-01-05T20:48:18.487106",
+  "config": {
+    "domain": "education",
+    "base_model": "/home/core/projects/debate-simulator/models/base/llama3.1-nemotron-nano-8b-v1",
+    "sft_path": "/home/core/projects/debate-simulator/data/sft/education.jsonl",
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "v_proj"
+    ],
+    "num_epochs": 3,
+    "batch_size": 2,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 0.0002,
+    "max_seq_length": 512,
+    "max_train_samples": null,
+    "max_val_samples": null,
+    "max_test_samples": null
+  },
+  "dataset_sizes": {
+    "train": 131,
+    "val": 11,
+    "test": 10
+  },
+  "final_metrics": {
+    "train_loss": 1.9324149290720622,
+    "train_perplexity": 6.906168025744065,
+    "val_loss": 1.2256039381027222,
+    "val_perplexity": 3.406222609341074,
+    "test_loss": 1.3112729787826538,
+    "test_perplexity": 3.7108945968661664
+  },
+  "training_history": {
+    "steps": [
+      5,
+      10,
+      15,
+      20,
+      25
+    ],
+    "training_loss": [
+      2.7991,
+      2.3955,
+      2.0006,
+      1.5441,
+      1.3121
+    ],
+    "validation_loss": [
+      1.414212942123413,
+      1.2256039381027222,
+      1.3112729787826538
+    ],
+    "learning_rate": [
+      0.00019166666666666667,
+      0.00015833333333333332,
+      0.00011666666666666668,
+      7.500000000000001e-05,
+      3.3333333333333335e-05
+    ],
+    "epochs": [
+      0.6060606060606061,
+      1.121212121212121,
+      1.7272727272727273,
+      2.242424242424242,
+      2.8484848484848486
+    ]
+  }
+}

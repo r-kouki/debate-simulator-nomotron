@@ -28,15 +28,11 @@ Thumbs.db
 # Large generated data, models, runs
 /data/raw/
 /runs/
-/models/
+/models/base/
 /indexes/
 /qlora_adapter_test/
 /qlora_test_out/
-*.safetensors
-*.pt
-*.pth
-*.ckpt
-*.bin
+# Note: adapter weights are tracked via Git LFS
 
 # Tokenizer/optimizer artifacts (often generated)
 added_tokens.json
