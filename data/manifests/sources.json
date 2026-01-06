@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-01-04T19:48:43Z",
+  "sources": [
+    {
+      "alias": "medmcqa",
+      "domain": "medicine",
+      "local_path": "debate-simulator/data/raw/medmcqa",
+      "source_id": "openlifescienceai/medmcqa",
+      "type": "hf_dataset",
+      "url": "https://huggingface.co/datasets/openlifescienceai/medmcqa"
+    },
+    {
+      "alias": "pubmed_qa",
+      "domain": "medicine",
+      "local_path": "debate-simulator/data/raw/pubmed_qa",
+      "source_id": "bigbio/pubmed_qa",
+      "type": "hf_dataset",
+      "url": "https://huggingface.co/datasets/bigbio/pubmed_qa"
+    },
+    {
+      "alias": "DebateSum",
+      "domain": "debate",
+      "local_path": "debate-simulator/data/raw/DebateSum",
+      "source_id": "Hellisotherpeople/DebateSum",
+      "type": "hf_dataset",
+      "url": "https://huggingface.co/datasets/Hellisotherpeople/DebateSum"
+    },
+    {
+      "alias": "openstax",
+      "domain": "education",
+      "local_path": "debate-simulator/data/raw/openstax",
+      "source_id": "crumb/openstax-text",
+      "type": "hf_dataset",
+      "url": "https://huggingface.co/datasets/crumb/openstax-text"
+    },
+    {
+      "alias": "climate_fever",
+      "domain": "ecology",
+      "local_path": "debate-simulator/data/raw/climate_fever",
+      "source_id": "tdiggelm/climate_fever",
+      "type": "hf_dataset",
+      "url": "https://huggingface.co/datasets/tdiggelm/climate_fever"
+    },
+    {
+      "domain": "medicine",
+      "local_path": "debate-simulator/data/raw/MedQuAD",
+      "source_id": "MedQuAD",
+      "type": "github_repo",
+      "url": "https://github.com/abachaa/MedQuAD"
+    },
+    {
+      "domain": "debate",
+      "local_path": "debate-simulator/data/raw/IAM",
+      "source_id": "IAM",
+      "type": "github_repo",
+      "url": "https://github.com/LiyingCheng95/IAM"
+    }
+  ]
+}

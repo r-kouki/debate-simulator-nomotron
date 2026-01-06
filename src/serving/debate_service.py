@@ -2,13 +2,16 @@
 Debate service - bridges the API with the LLM for real-time debate.
 
 Manages active debate sessions and generates AI responses.
+Supports AI vs AI mode, web research, and structured debate phases.
 """
 
 import re
 import uuid
+import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
+from enum import Enum
 
 import torch
 from transformers import GenerationConfig
@@ -24,15 +27,24 @@ from src.serving.models import (
     ScoreBreakdown,
 )
 from src.serving.topics import get_topic, get_topic_by_title
+from src.utils.web_search import quick_research, ResearchData
+
+
+class DebatePhase(Enum):
+    """Phases of a structured debate."""
+    OPENING = "opening"
+    REBUTTAL = "rebuttal"
+    CLOSING = "closing"
 
 
 @dataclass
 class DebateMessage:
     """A single message in the debate."""
-    role: str  # "human" or "ai"
+    role: str  # "human", "pro_ai", "con_ai"
     content: str
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     scores: dict | None = None
+    phase: str = ""  # opening, rebuttal, closing
 
 
 @dataclass
@@ -42,7 +54,7 @@ class DebateSession:
     topic_id: str | None
     topic_title: str
     stance: str
-    mode: str
+    mode: str  # "human-vs-ai", "cops-vs-ai", "ai-vs-ai"
     difficulty: str
     timer_seconds: int
     messages: list[DebateMessage] = field(default_factory=list)
@@ -55,6 +67,11 @@ class DebateSession:
     })
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
     ended: bool = False
+    # New fields for enhanced debates
+    current_phase: DebatePhase = DebatePhase.OPENING
+    turn_number: int = 0
+    research_data: ResearchData | None = None
+    current_speaker: str = "pro"  # For AI vs AI: "pro" or "con"
 
 
 class DebateService:
@@ -86,58 +103,129 @@ class DebateService:
         params = {
             "easy": {
                 "temperature": 0.8,
-                "max_new_tokens": 150,
-                "style": "casual and accessible",
+                "max_new_tokens": 300,
+                "style": "casual, conversational, and easy to understand",
             },
             "medium": {
                 "temperature": 0.7,
-                "max_new_tokens": 200,
-                "style": "balanced and reasoned",
+                "max_new_tokens": 400,
+                "style": "balanced, well-reasoned, using both logic and examples",
             },
             "hard": {
                 "temperature": 0.6,
-                "max_new_tokens": 250,
-                "style": "rigorous and evidence-based",
+                "max_new_tokens": 500,
+                "style": "rigorous, evidence-based, with sophisticated rhetorical techniques",
             },
         }
         return params.get(difficulty, params["medium"])
+
+    def _get_phase_instructions(self, phase: DebatePhase, stance: str) -> str:
+        """Get phase-specific debate instructions."""
+        stance_word = "in favor of" if stance == "pro" else "against"
+        
+        instructions = {
+            DebatePhase.OPENING: f"""
+You are presenting your OPENING ARGUMENT {stance_word} the topic.
+
+Structure your opening:
+1. Start with a compelling hook or question
+2. State your thesis clearly
+3. Present 2-3 main supporting points with evidence
+4. End with a preview of your key argument
+
+Be persuasive and set the tone for the debate.""",
+            
+            DebatePhase.REBUTTAL: f"""
+You are in the REBUTTAL phase, arguing {stance_word} the topic.
+
+Your task:
+1. Directly address and counter your opponent's main points
+2. Expose weaknesses in their reasoning
+3. Provide counter-evidence or alternative interpretations
+4. Reinforce your own position with new evidence
+
+Be respectful but firm in your disagreement.""",
+            
+            DebatePhase.CLOSING: f"""
+You are presenting your CLOSING ARGUMENT {stance_word} the topic.
+
+Structure your closing:
+1. Summarize the key points of contention
+2. Explain why your arguments were stronger
+3. Address any remaining doubts
+4. End with a powerful, memorable conclusion
+
+Leave a lasting impression on the audience.""",
+        }
+        return instructions.get(phase, instructions[DebatePhase.REBUTTAL])
 
     def _build_prompt(
         self,
         session: DebateSession,
         human_message: str,
+        is_ai_vs_ai: bool = False,
+        ai_stance: str = "",
     ) -> str:
         """Build the prompt for the AI response."""
-        # Get topic info if available
-        topic_info = ""
-        if session.topic_id:
-            topic = get_topic(session.topic_id)
-            if topic:
-                topic_info = f"\nKey points: {', '.join(topic.keyPoints[:3])}"
-
-        # AI takes opposite stance
-        ai_stance = "con" if session.stance == "pro" else "pro"
-        stance_desc = "in favor" if ai_stance == "pro" else "against"
-
+        # Determine stance
+        if is_ai_vs_ai:
+            stance = ai_stance
+        else:
+            # AI takes opposite stance in human vs AI
+            stance = "con" if session.stance == "pro" else "pro"
+        
+        stance_desc = "in favor" if stance == "pro" else "against"
         difficulty_params = self._get_difficulty_params(session.difficulty)
-
-        system_msg = f"""You are an expert debate opponent. The topic is: {session.topic_title}
-
-You are arguing {stance_desc} (the {ai_stance.upper()} position).{topic_info}
-
-Your style should be {difficulty_params['style']}.
-Respond directly to your opponent's arguments with a single focused counterargument.
-Be concise (2-3 sentences max). Do not use bullet points or lists."""
-
+        phase_instructions = self._get_phase_instructions(session.current_phase, stance)
+        
+        # Get research context
+        research_context = ""
+        if session.research_data:
+            if stance == "pro" and session.research_data.pro_arguments:
+                research_context = "\n\nRelevant research supporting your position:\n"
+                for arg in session.research_data.pro_arguments[:2]:
+                    research_context += f"- {arg}\n"
+            elif stance == "con" and session.research_data.con_arguments:
+                research_context = "\n\nRelevant research supporting your position:\n"
+                for arg in session.research_data.con_arguments[:2]:
+                    research_context += f"- {arg}\n"
+            if session.research_data.facts:
+                research_context += f"\nKey fact: {session.research_data.facts[0]}\n"
+        
         # Build conversation history
         history = ""
-        for msg in session.messages[-4:]:  # Last 4 messages for context
-            role = "Human" if msg.role == "human" else "AI"
-            history += f"\n{role}: {msg.content}"
+        for msg in session.messages[-6:]:  # More context for better responses
+            if msg.role == "human":
+                history += f"\nOpponent: {msg.content}"
+            elif msg.role in ["pro_ai", "con_ai", "ai"]:
+                speaker = "You" if (stance == "pro" and msg.role == "pro_ai") or (stance == "con" and msg.role == "con_ai") else "Opponent"
+                history += f"\n{speaker}: {msg.content}"
+        
+        system_msg = f"""You are an expert debater with years of experience in competitive debate.
 
-        user_msg = f"""Previous exchange:{history}
+TOPIC: {session.topic_title}
+YOUR POSITION: {stance.upper()} ({stance_desc})
+PHASE: {session.current_phase.value.upper()}
 
-Human's latest argument: {human_message}
+{phase_instructions}
+{research_context}
+STYLE REQUIREMENTS:
+- Your style should be {difficulty_params['style']}
+- Sound natural and human, not like a machine
+- Use rhetorical questions, analogies, and emotional appeals where appropriate
+- Vary your sentence structure and length
+- Be confident and persuasive
+- DO NOT use bullet points or numbered lists in your response
+- Write in flowing paragraphs"""
+
+        if is_ai_vs_ai:
+            user_msg = f"""Debate history:{history}
+
+Now present your {session.current_phase.value} argument:"""
+        else:
+            user_msg = f"""Debate exchange:{history}
+
+Opponent's latest argument: {human_message}
 
 Respond with your counterargument:"""
 
@@ -252,6 +340,15 @@ Respond with your counterargument:"""
             StartDebateResponse with session ID
         """
         session_id = f"debate-{uuid.uuid4().hex[:8]}"
+        
+        # Perform web research for the topic
+        research_data = None
+        try:
+            print(f"[DebateService] Researching topic: {request.topicTitle}")
+            research_data = quick_research(request.topicTitle)
+            print(f"[DebateService] Found {len(research_data.pro_arguments)} pro, {len(research_data.con_arguments)} con arguments")
+        except Exception as e:
+            print(f"[DebateService] Web research failed: {e}")
 
         session = DebateSession(
             id=session_id,
@@ -261,14 +358,84 @@ Respond with your counterargument:"""
             mode=request.mode,
             difficulty=request.difficulty,
             timer_seconds=request.timerSeconds,
+            research_data=research_data,
         )
 
         self._sessions[session_id] = session
 
         return StartDebateResponse(
             debateId=session_id,
-            initialState={"judgeEnabled": True},
+            initialState={
+                "judgeEnabled": True,
+                "mode": request.mode,
+                "hasResearch": research_data is not None,
+            },
         )
+
+    def generate_next_turn(self, debate_id: str) -> dict:
+        """
+        Generate the next turn in AI vs AI mode.
+        
+        Args:
+            debate_id: ID of the debate session
+            
+        Returns:
+            Dict with the generated message and metadata
+        """
+        session = self._sessions.get(debate_id)
+        if not session:
+            raise ValueError(f"Debate session not found: {debate_id}")
+        
+        if session.mode != "ai-vs-ai":
+            raise ValueError("generate_next_turn is only for ai-vs-ai mode")
+        
+        # Determine current speaker based on turn number
+        current_speaker = "pro" if session.turn_number % 2 == 0 else "con"
+        
+        # Update phase based on turn number
+        if session.turn_number < 2:
+            session.current_phase = DebatePhase.OPENING
+        elif session.turn_number < 6:
+            session.current_phase = DebatePhase.REBUTTAL
+        else:
+            session.current_phase = DebatePhase.CLOSING
+        
+        # Build prompt for current speaker
+        prompt = self._build_prompt(
+            session=session,
+            human_message="",
+            is_ai_vs_ai=True,
+            ai_stance=current_speaker,
+        )
+        
+        # Generate response
+        response = self._generate_response(prompt, session.difficulty)
+        
+        # Store message
+        role = f"{current_speaker}_ai"
+        msg = DebateMessage(
+            role=role,
+            content=response,
+            phase=session.current_phase.value,
+        )
+        session.messages.append(msg)
+        session.turn_number += 1
+        
+        # Update speaker for next turn
+        session.current_speaker = "con" if current_speaker == "pro" else "pro"
+        
+        # Check if debate should end (after closing arguments)
+        is_complete = session.turn_number >= 8
+        if is_complete:
+            session.ended = True
+        
+        return {
+            "speaker": current_speaker.upper(),
+            "message": response,
+            "phase": session.current_phase.value,
+            "turnNumber": session.turn_number,
+            "isComplete": is_complete,
+        }
 
     def send_turn(self, request: SendTurnRequest) -> SendTurnResponse:
         """

@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-01-04T19:48:43Z",
+  "licenses": {
+    "Hellisotherpeople/DebateSum": [
+      "mit"
+    ],
+    "IAM": "unknown",
+    "MedQuAD": "unknown",
+    "bigbio/pubmed_qa": "mit",
+    "crumb/openstax-text": "cc-by-4.0",
+    "openlifescienceai/medmcqa": [
+      "apache-2.0"
+    ],
+    "tdiggelm/climate_fever": [
+      "unknown"
+    ]
+  }
+}

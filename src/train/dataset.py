@@ -18,6 +18,15 @@ def load_debate_jsonl(path: Path) -> Dataset:
     return Dataset.from_list(records)
 
 
+def load_sft_jsonl(path: Path) -> Dataset:
+    """Load a JSONL SFT dataset with a text field."""
+    records = []
+    with open(path) as f:
+        for line in f:
+            records.append(json.loads(line))
+    return Dataset.from_list(records)
+
+
 def format_debate_prompt(example: dict) -> str:
     """
     Format a debate example into a training prompt.
@@ -93,6 +102,35 @@ def prepare_dataset_for_training(
         # For causal LM, labels = input_ids
         tokenized["labels"] = tokenized["input_ids"].copy()
 
+        return tokenized
+
+    return dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=dataset.column_names,
+        desc="Tokenizing"
+    )
+
+
+def prepare_sft_dataset_for_training(
+    dataset: Dataset,
+    tokenizer,
+    max_length: int = 512,
+) -> Dataset:
+    """
+    Tokenize and prepare SFT dataset for causal LM training.
+
+    Expects a "text" field containing chat-formatted content.
+    """
+    def tokenize_function(examples):
+        texts = examples.get("text", [])
+        tokenized = tokenizer(
+            texts,
+            truncation=True,
+            max_length=max_length,
+            padding="max_length",
+        )
+        tokenized["labels"] = tokenized["input_ids"].copy()
         return tokenized
 
     return dataset.map(

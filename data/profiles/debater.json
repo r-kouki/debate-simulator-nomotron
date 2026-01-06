@@ -1,0 +1,79 @@
+{
+  "username": "Debater",
+  "avatar": "default",
+  "level": 1,
+  "xp": 0,
+  "xpNext": 100,
+  "rankTitle": "Novice",
+  "stats": {
+    "wins": 0,
+    "losses": 0,
+    "winRate": 0.0,
+    "averageScore": 0.0,
+    "bestStreak": 0,
+    "topicsPlayed": 0
+  },
+  "achievements": [
+    {
+      "id": "first-debate",
+      "title": "First Steps",
+      "description": "Complete your first debate",
+      "unlocked": false
+    },
+    {
+      "id": "first-win",
+      "title": "Victory!",
+      "description": "Win your first debate",
+      "unlocked": false
+    },
+    {
+      "id": "combo-starter",
+      "title": "Combo Starter",
+      "description": "Achieve a 3-turn combo streak",
+      "unlocked": false
+    },
+    {
+      "id": "combo-king",
+      "title": "Combo King",
+      "description": "Achieve a 5-turn combo streak",
+      "unlocked": false
+    },
+    {
+      "id": "evidence-master",
+      "title": "Evidence Master",
+      "description": "Score 90+ on evidence use",
+      "unlocked": false
+    },
+    {
+      "id": "civil-debater",
+      "title": "Civil Debater",
+      "description": "Maintain 95+ civility across a debate",
+      "unlocked": false
+    },
+    {
+      "id": "topic-explorer",
+      "title": "Topic Explorer",
+      "description": "Debate 5 different topics",
+      "unlocked": false
+    },
+    {
+      "id": "winning-streak",
+      "title": "Winning Streak",
+      "description": "Win 3 debates in a row",
+      "unlocked": false
+    },
+    {
+      "id": "level-5",
+      "title": "Rising Star",
+      "description": "Reach level 5",
+      "unlocked": false
+    },
+    {
+      "id": "level-10",
+      "title": "Debate Champion",
+      "description": "Reach level 10",
+      "unlocked": false
+    }
+  ],
+  "history": []
+}

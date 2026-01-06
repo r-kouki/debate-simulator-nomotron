@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-01-04T19:48:43Z",
+  "sources": {
+    "Hellisotherpeople/DebateSum": {
+      "hf_revision": "main",
+      "hf_sha": "d65bea5f7a48f9af06453e855dbffe1753a0f508",
+      "timestamp_utc": "2026-01-04T19:45:59Z"
+    },
+    "IAM": {
+      "git_commit": "5497013e36a6af07a798b42965e6a3c321aa56ae",
+      "timestamp_utc": "2026-01-04T19:48:43Z"
+    },
+    "MedQuAD": {
+      "git_commit": "577bd37b96c02d1833b2c9eed2de9f96964e96cb",
+      "timestamp_utc": "2026-01-04T19:48:08Z"
+    },
+    "bigbio/pubmed_qa": {
+      "hf_revision": "main",
+      "hf_sha": "15578e80ef02c2c9636d33fdd7eb6b05b987ba60",
+      "timestamp_utc": "2026-01-04T19:39:41Z"
+    },
+    "crumb/openstax-text": {
+      "hf_revision": "main",
+      "hf_sha": "8f502ca45f9f05cb5673eae445b7a97a4e8c4349",
+      "timestamp_utc": "2026-01-04T19:46:59Z"
+    },
+    "openlifescienceai/medmcqa": {
+      "hf_revision": "main",
+      "hf_sha": "91c6572c454088bf71b679ad90aa8dffcd0d5868",
+      "timestamp_utc": "2026-01-04T19:35:42Z"
+    },
+    "tdiggelm/climate_fever": {
+      "hf_revision": "main",
+      "hf_sha": "ae61ccb9320a78109a246414139ff3a2bd677b8b",
+      "timestamp_utc": "2026-01-04T19:47:43Z"
+    }
+  }
+}

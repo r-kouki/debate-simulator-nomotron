@@ -69,6 +69,8 @@ def get_training_arguments(
     logging_steps: int = 10,
     eval_steps: int = 50,
     save_steps: int = 100,
+    dataloader_num_workers: int = 0,
+    dataloader_pin_memory: bool = False,
 ) -> TrainingArguments:
     """
     Get training arguments optimized for QLoRA training on RTX 3090.
@@ -109,7 +111,8 @@ def get_training_arguments(
         gradient_checkpointing=True,
         optim="paged_adamw_8bit",
         report_to="none",  # No external logging (local only)
-        dataloader_num_workers=2,
+        dataloader_num_workers=dataloader_num_workers,
+        dataloader_pin_memory=dataloader_pin_memory,
         remove_unused_columns=False,
     )
 
@@ -159,6 +162,8 @@ def save_training_report(
     config: dict,
     final_train_loss: float,
     final_val_loss: float,
+    test_loss: Optional[float] = None,
+    dataset_sizes: Optional[dict] = None,
 ):
     """
     Save comprehensive training report for academic evaluation.
@@ -173,6 +178,7 @@ def save_training_report(
     report = {
         "timestamp": datetime.now().isoformat(),
         "config": config,
+        "dataset_sizes": dataset_sizes,
         "final_metrics": {
             "train_loss": final_train_loss,
             "train_perplexity": compute_perplexity(final_train_loss),
@@ -187,6 +193,9 @@ def save_training_report(
             "epochs": metrics.epochs,
         },
     }
+    if test_loss is not None:
+        report["final_metrics"]["test_loss"] = test_loss
+        report["final_metrics"]["test_perplexity"] = compute_perplexity(test_loss)
 
     report_path = output_dir / "training_report.json"
     with open(report_path, 'w') as f:

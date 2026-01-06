@@ -11,7 +11,11 @@
       "Bash(python scripts/generate_education_dataset.py:*)",
       "Bash(python scripts/train_education_adapter.py:*)",
       "Bash(python scripts/evaluate_education_adapter.py:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python3:*)",
+      "Bash(python scripts/improve_sft_data.py:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(python scripts/train_domain_adapter.py:*)"
     ]
   }
 }

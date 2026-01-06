@@ -1,0 +1,21 @@
+{
+  "domains": {
+    "debate": {
+      "documents": 3000,
+      "token_estimate": 760439
+    },
+    "ecology": {
+      "documents": 1535,
+      "token_estimate": 39616
+    },
+    "education": {
+      "documents": 76,
+      "token_estimate": 323427
+    },
+    "medicine": {
+      "documents": 6000,
+      "token_estimate": 129266
+    }
+  },
+  "generated_at": "2026-01-05T19:39:14Z"
+}

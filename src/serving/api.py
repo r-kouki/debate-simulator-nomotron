@@ -88,6 +88,15 @@ async def start_debate(request: StartDebateRequest):
     return debate_service.start_debate(request)
 
 
+@app.post("/debates/{debate_id}/next-turn")
+async def next_turn(debate_id: str):
+    """Generate the next turn in AI vs AI mode."""
+    try:
+        return debate_service.generate_next_turn(debate_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @app.post("/debates/{debate_id}/turns", response_model=SendTurnResponse)
 async def send_turn(debate_id: str, request: SendTurnRequest):
     """Send a debate turn and get AI response."""
