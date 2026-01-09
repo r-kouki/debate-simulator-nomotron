@@ -122,15 +122,17 @@ class DebateCrew:
         topic: str,
         num_rounds: int = 2,
         recommend_guests: bool = False,
+        progress_callback: Optional[callable] = None,
     ) -> DebateResult:
         """
         Run a complete debate on the given topic.
-        
+
         Args:
             topic: The debate topic
             num_rounds: Number of Pro/Con exchange rounds
             recommend_guests: Whether to recommend real debate guests
-            
+            progress_callback: Optional callback function(event_type, step, round_num, progress, message, data)
+
         Returns:
             DebateResult with all debate data
         """
@@ -157,16 +159,26 @@ class DebateCrew:
         # Step 1: Route domain
         if self.verbose:
             print("[1/6] Routing domain...")
+        if progress_callback:
+            progress_callback("log", "Routing Domain", 0, 5, "Classifying topic domain...", {})
+
         domain, confidence = classify_domain(topic)
         if self.verbose:
             print(f"  → Domain: {domain} (confidence: {confidence:.2f})")
+        if progress_callback:
+            progress_callback("log", "Domain Routed", 0, 10, f"Domain: {domain}", {"domain": domain})
         
         # Step 2: Research
         if self.verbose:
             print("[2/6] Gathering research...")
+        if progress_callback:
+            progress_callback("log", "Researching", 0, 15, "Gathering background research...", {})
+
         research_context = self._gather_research(topic)
         if self.verbose:
             print(f"  → Research gathered ({len(research_context)} chars)")
+        if progress_callback:
+            progress_callback("log", "Research Complete", 0, 20, f"Research gathered ({len(research_context)} chars)", {})
         
         # Step 3: Debate rounds
         if self.verbose:
@@ -180,6 +192,9 @@ class DebateCrew:
                 print(f"  Round {round_num}:")
             
             # Pro argument
+            if progress_callback:
+                progress_callback("log", "Pro Debating", round_num, 20 + (round_num * 25), f"Generating Pro argument for round {round_num}...", {})
+
             pro_arg = self._generate_argument(
                 topic=topic,
                 domain=domain,
@@ -190,11 +205,20 @@ class DebateCrew:
             pro_arguments.append(pro_arg)
             if self.verbose:
                 print(f"    PRO: {pro_arg[:100]}...")
-            
+
+            # Send pro argument immediately via callback
+            if progress_callback:
+                progress_callback("argument", "Pro Argument", round_num, 20 + (round_num * 25),
+                                f"Pro argument round {round_num}",
+                                {"side": "pro", "content": pro_arg, "round": round_num})
+
             # Record pro argument in con's history for awareness
             self._debate_tool_con.add_external_turn("pro", pro_arg, round_num)
             
             # Con argument
+            if progress_callback:
+                progress_callback("log", "Con Debating", round_num, 35 + (round_num * 25), f"Generating Con argument for round {round_num}...", {})
+
             con_arg = self._generate_argument(
                 topic=topic,
                 domain=domain,
@@ -205,27 +229,47 @@ class DebateCrew:
             con_arguments.append(con_arg)
             if self.verbose:
                 print(f"    CON: {con_arg[:100]}...")
-            
+
+            # Send con argument immediately via callback
+            if progress_callback:
+                progress_callback("argument", "Con Argument", round_num, 35 + (round_num * 25),
+                                f"Con argument round {round_num}",
+                                {"side": "con", "content": con_arg, "round": round_num})
+
             # Record con argument in pro's history
             self._debate_tool_pro.add_external_turn("con", con_arg, round_num)
         
         # Step 4: Fact-check
         if self.verbose:
             print("[4/6] Fact-checking arguments...")
+        if progress_callback:
+            progress_callback("log", "Fact Checking", num_rounds, 70, "Verifying factual accuracy...", {})
+
         fact_check = self._fact_check_debate(
             pro_arguments, con_arguments, research_context
         )
         if self.verbose:
             print(f"  → Pro faithfulness: {fact_check['pro']['faithfulness_score']:.2f}")
             print(f"  → Con faithfulness: {fact_check['con']['faithfulness_score']:.2f}")
+        if progress_callback:
+            progress_callback("log", "Fact Check Complete", num_rounds, 80, "Fact check complete", {"fact_check": fact_check})
         
         # Step 5: Judge
         if self.verbose:
             print("[5/6] Judging debate...")
+        if progress_callback:
+            progress_callback("log", "Judging", num_rounds, 85, "Judge evaluating arguments...", {})
+
         judge_score = judge_debate(pro_arguments, con_arguments, fact_check)
         if self.verbose:
             print(f"  → Winner: {judge_score.winner.upper()}")
             print(f"  → Pro score: {judge_score.pro_score}, Con score: {judge_score.con_score}")
+        if progress_callback:
+            progress_callback("log", "Judge Complete", num_rounds, 95, f"Winner: {judge_score.winner.upper()}", {
+                "winner": judge_score.winner,
+                "pro_score": judge_score.pro_score,
+                "con_score": judge_score.con_score
+            })
         
         # Step 6: Persona recommendations (optional)
         recommended_guests = []

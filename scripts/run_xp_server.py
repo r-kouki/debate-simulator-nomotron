@@ -68,8 +68,8 @@ class DebateArgument(BaseModel):
 
 class JudgeScore(BaseModel):
     winner: str  # 'pro', 'con', or 'tie'
-    pro_score: int
-    con_score: int
+    pro_score: float  # Changed from int to float
+    con_score: float  # Changed from int to float
     reasoning: str
     fact_check_passed: bool
 
@@ -121,6 +121,9 @@ debates: dict[str, DebateSession] = {}
 debate_progress_queues: dict[str, asyncio.Queue] = {}
 settings: Settings = Settings()
 
+# Pre-loaded CrewAI debate crew with models loaded in memory
+preloaded_crew: Optional[DebateCrew] = None
+
 # Runs directory for persisting results
 RUNS_DIR = PROJECT_ROOT / "runs" / "debates"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -170,17 +173,86 @@ def save_debate_result(debate: DebateSession):
 
 
 def load_debate_history() -> List[DebateSession]:
-    """Load debate history from filesystem."""
+    """Load debate history from filesystem with backward compatibility."""
     history = []
-    
+
     for debate_dir in RUNS_DIR.iterdir():
         if debate_dir.is_dir():
             result_file = debate_dir / "result.json"
             if result_file.exists():
-                with open(result_file) as f:
-                    data = json.load(f)
-                    history.append(DebateSession(**data))
-    
+                try:
+                    with open(result_file) as f:
+                        data = json.load(f)
+
+                    # Handle old format (from original run_debate_crew.py)
+                    if "id" not in data:
+                        # Migrate old format to new format
+                        debate_id = debate_dir.name
+
+                        # Convert arguments from strings to DebateArgument objects
+                        pro_arguments = []
+                        for i, arg_text in enumerate(data.get("pro_arguments", [])):
+                            if isinstance(arg_text, str):
+                                pro_arguments.append(DebateArgument(
+                                    side="pro",
+                                    round=i + 1,
+                                    content=arg_text,
+                                    timestamp=datetime.now().isoformat()
+                                ))
+                            else:
+                                # Already in new format
+                                pro_arguments.append(DebateArgument(**arg_text))
+
+                        con_arguments = []
+                        for i, arg_text in enumerate(data.get("con_arguments", [])):
+                            if isinstance(arg_text, str):
+                                con_arguments.append(DebateArgument(
+                                    side="con",
+                                    round=i + 1,
+                                    content=arg_text,
+                                    timestamp=datetime.now().isoformat()
+                                ))
+                            else:
+                                # Already in new format
+                                con_arguments.append(DebateArgument(**arg_text))
+
+                        # Convert judge score
+                        judge_data = data.get("judge", {})
+                        judge_score = None
+                        if judge_data:
+                            judge_score = JudgeScore(
+                                winner=judge_data.get("winner", "tie"),
+                                pro_score=float(judge_data.get("pro_score", 0)),
+                                con_score=float(judge_data.get("con_score", 0)),
+                                reasoning=judge_data.get("reasoning", ""),
+                                fact_check_passed=True  # Assume passed for old debates
+                            )
+
+                        # Create migrated session
+                        migrated = DebateSession(
+                            id=debate_id,
+                            topic=data.get("topic", "Unknown"),
+                            domain=data.get("domain", "general"),
+                            rounds=data.get("rounds", 2),
+                            status="completed",
+                            start_time=datetime.now().isoformat(),
+                            end_time=datetime.now().isoformat(),
+                            current_round=data.get("rounds", 2),
+                            current_step="Completed",
+                            progress=100,
+                            pro_arguments=pro_arguments,
+                            con_arguments=con_arguments,
+                            judge_score=judge_score,
+                        )
+                        history.append(migrated)
+                    else:
+                        # New format - load directly
+                        history.append(DebateSession(**data))
+
+                except Exception as e:
+                    print(f"Warning: Failed to load debate from {debate_dir}: {e}")
+                    continue
+
     # Sort by start time descending
     history.sort(key=lambda d: d.start_time, reverse=True)
     return history
@@ -202,8 +274,8 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
     print(f"Use Internet: {request.use_internet}")
     print(f"{'='*60}\n")
     
-    async def send_progress(step: str, round_num: int, progress: float, message: str, argument: dict = None):
-        """Helper to send progress updates."""
+    async def send_progress(event_type: str, step: str, round_num: int, progress: float, message: str, argument: dict = None, extra: dict = None):
+        """Helper to send progress updates with proper event types."""
         debate.current_step = step
         debate.current_round = round_num
         debate.progress = progress
@@ -213,7 +285,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
         if argument:
             arg = DebateArgument(
                 side=argument["side"],
-                round=round_num,
+                round=argument.get("round", round_num),
                 content=argument["content"],
                 timestamp=datetime.now().isoformat()
             )
@@ -225,35 +297,79 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             print(f"    → {argument['side'].upper()} argument: {argument['content'][:100]}...")
         
         if queue:
-            await queue.put({
+            event_data = {
+                "type": event_type,  # Required field for frontend
                 "debate_id": debate_id,
                 "status": debate.status,
                 "step": step,
                 "round": round_num,
                 "progress": progress,
                 "message": message,
-                "argument": argument,
-            })
+            }
+            if argument:
+                event_data["side"] = argument["side"]
+                event_data["content"] = argument["content"]
+            if extra:
+                event_data.update(extra)
+            await queue.put(event_data)
     
     try:
         # Update status to running
         debate.status = "running"
-        await send_progress("Initializing", 0, 0, "Loading CrewAI...")
-        
-        # Initialize CrewAI debate crew
-        print("[1/6] Initializing DebateCrew...")
-        crew = DebateCrew(
-            use_internet=request.use_internet,
-            output_dir=PROJECT_ROOT / "runs" / "debates",
-            verbose=True,
-        )
-        
-        await send_progress("Routing to Domain", 0, 5, "Classifying domain...")
-        
-        # Run the debate synchronously in a thread pool
+        await send_progress("debate_started", "Initializing", 0, 0, "Loading CrewAI...", extra={"topic": request.topic})
+
+        # Use preloaded crew or create new one
+        crew = preloaded_crew
+        if crew is None:
+            print("[WARNING] No preloaded crew available, creating new one...")
+            crew = DebateCrew(
+                use_internet=request.use_internet,
+                output_dir=PROJECT_ROOT / "runs" / "debates",
+                verbose=True,
+            )
+        else:
+            print(f"[INFO] Using preloaded crew (models already in memory)")
+            # Update internet setting for this debate
+            if request.use_internet:
+                crew.enable_internet()
+            else:
+                crew.disable_internet()
+
+        # Get event loop first before defining callback
         import concurrent.futures
         loop = asyncio.get_event_loop()
-        
+
+        # Create a thread-safe callback wrapper
+        def progress_callback_sync(event_type, step, round_num, progress, message, data):
+            """Thread-safe callback that schedules async progress updates."""
+            try:
+                # Schedule the coroutine in the event loop from the executor thread
+                future = asyncio.run_coroutine_threadsafe(
+                    send_progress(
+                        event_type=event_type,
+                        step=step,
+                        round_num=round_num,
+                        progress=progress,
+                        message=message,
+                        argument=data if event_type == "argument" else None,
+                        extra=data if event_type != "argument" else None
+                    ),
+                    loop
+                )
+                # Wait briefly for the event to be queued
+                try:
+                    future.result(timeout=0.5)  # Increased timeout slightly
+                    if event_type == "argument":
+                        print(f"  → [CALLBACK] Sent {data.get('side', '?').upper()} argument via SSE")
+                except asyncio.TimeoutError:
+                    print(f"  ⚠ [CALLBACK] Timeout sending {event_type} event")
+                except Exception as e:
+                    print(f"  ✗ [CALLBACK] Error in future.result(): {e}")
+            except Exception as e:
+                print(f"  ✗ [CALLBACK] Failed to schedule {event_type}: {e}")
+
+        # Run the debate synchronously in a thread pool with callback
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
             result = await loop.run_in_executor(
                 executor,
@@ -261,6 +377,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
                 request.topic,
                 request.rounds,
                 request.recommend_guests,
+                progress_callback_sync,
             )
         
         # Process results
@@ -268,47 +385,26 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
         print(f"  Winner: {result.judge_score.winner}")
         print(f"  Pro Score: {result.judge_score.pro_score}")
         print(f"  Con Score: {result.judge_score.con_score}")
-        
-        # Update debate with results
+
+        # Arguments were already sent via callback in real-time
+        # Just ensure they're stored in the debate session
         for i, pro_arg in enumerate(result.pro_arguments):
-            arg = DebateArgument(
-                side="pro",
-                round=i + 1,
-                content=pro_arg,
-                timestamp=datetime.now().isoformat()
-            )
-            if arg not in debate.pro_arguments:
-                debate.pro_arguments.append(arg)
-                if queue:
-                    await queue.put({
-                        "debate_id": debate_id,
-                        "status": "running",
-                        "step": "Pro Argument",
-                        "round": i + 1,
-                        "progress": 20 + (i * 30 / max(1, len(result.pro_arguments))),
-                        "message": f"Pro argument round {i+1}",
-                        "argument": {"side": "pro", "content": pro_arg},
-                    })
-        
+            if i >= len(debate.pro_arguments):
+                debate.pro_arguments.append(DebateArgument(
+                    side="pro",
+                    round=i + 1,
+                    content=pro_arg,
+                    timestamp=datetime.now().isoformat()
+                ))
+
         for i, con_arg in enumerate(result.con_arguments):
-            arg = DebateArgument(
-                side="con",
-                round=i + 1,
-                content=con_arg,
-                timestamp=datetime.now().isoformat()
-            )
-            if arg not in debate.con_arguments:
-                debate.con_arguments.append(arg)
-                if queue:
-                    await queue.put({
-                        "debate_id": debate_id,
-                        "status": "running",
-                        "step": "Con Argument",
-                        "round": i + 1,
-                        "progress": 50 + (i * 30 / max(1, len(result.con_arguments))),
-                        "message": f"Con argument round {i+1}",
-                        "argument": {"side": "con", "content": con_arg},
-                    })
+            if i >= len(debate.con_arguments):
+                debate.con_arguments.append(DebateArgument(
+                    side="con",
+                    round=i + 1,
+                    content=con_arg,
+                    timestamp=datetime.now().isoformat()
+                ))
         
         # Update final status
         debate.status = "completed"
@@ -323,16 +419,20 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             fact_check_passed=True
         )
         
-        # Send completion
-        if queue:
-            await queue.put({
-                "debate_id": debate_id,
-                "status": "completed",
-                "step": "Completed",
-                "round": request.rounds,
-                "progress": 100,
-                "message": f"Debate completed! Winner: {result.judge_score.winner.upper()}",
-            })
+        # Send completion with proper type
+        await send_progress(
+            "debate_complete", "Completed", request.rounds, 100,
+            f"Debate completed! Winner: {result.judge_score.winner.upper()}",
+            extra={
+                "winner": result.judge_score.winner,
+                "judgeScore": {
+                    "winner": result.judge_score.winner,
+                    "proScore": result.judge_score.pro_score,
+                    "conScore": result.judge_score.con_score,
+                    "reasoning": result.judge_score.reasoning,
+                }
+            }
+        )
         
         save_debate_result(debate)
         print(f"\n{'='*60}")
@@ -348,12 +448,12 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
         debate.error = str(e)
         if queue:
             await queue.put({
+                "type": "error",
                 "debate_id": debate_id,
                 "status": "error",
                 "step": "Error",
                 "round": 0,
-                "progress": 0,
-                "message": f"Error: {str(e)}",
+                "message": str(e),
             })
 
 
@@ -364,14 +464,41 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
+    global debates, preloaded_crew
+
     # Load saved debates on startup
-    global debates
     for saved_debate in load_debate_history():
         debates[saved_debate.id] = saved_debate
     print(f"Loaded {len(debates)} debates from history")
+
+    # Preload CrewAI models in memory for faster debate startup
+    if CREWAI_AVAILABLE:
+        print("\n" + "="*60)
+        print("PRELOADING CREWAI MODELS...")
+        print("="*60)
+        try:
+            preloaded_crew = DebateCrew(
+                use_internet=False,  # Can be changed per debate
+                output_dir=RUNS_DIR,
+                verbose=True,
+            )
+            # Trigger lazy model loading
+            _ = preloaded_crew.model_manager
+            print("✓ Models preloaded successfully!")
+            print("="*60 + "\n")
+        except Exception as e:
+            print(f"✗ Failed to preload models: {e}")
+            print("Debates will load models on demand.")
+            print("="*60 + "\n")
+            preloaded_crew = None
+
     yield
+
     # Cleanup on shutdown
     print("Shutting down...")
+    if preloaded_crew and preloaded_crew._model_manager:
+        print("Unloading models...")
+        # Models will be automatically garbage collected
 
 
 app = FastAPI(

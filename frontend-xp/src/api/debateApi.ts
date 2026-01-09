@@ -136,6 +136,19 @@ function mapApiArgument(data: any) {
 }
 
 function mapApiProgress(data: any): DebateProgress {
+  // Extract argument data if this is an argument event
+  let argument = undefined;
+  if (data.type === 'argument' && data.side && data.content) {
+    argument = {
+      side: data.side,
+      content: data.content,
+      round: data.round,
+    };
+  } else if (data.argument) {
+    // Fallback for nested argument object
+    argument = data.argument;
+  }
+
   return {
     debateId: data.debate_id,
     status: data.status,
@@ -143,6 +156,6 @@ function mapApiProgress(data: any): DebateProgress {
     round: data.round,
     progress: data.progress,
     message: data.message,
-    argument: data.argument,
+    argument,
   };
 }

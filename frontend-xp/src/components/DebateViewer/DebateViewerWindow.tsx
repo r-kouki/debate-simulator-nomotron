@@ -15,15 +15,19 @@ interface DebateViewerWindowProps {
   };
 }
 
-export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({ 
-  componentProps 
+export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
+  componentProps
 }) => {
-  const { activeDebateId, updateDebate, getDebateById } = useDebateStore();
+  const { activeDebateId, updateDebate } = useDebateStore();
   const { openWindow } = useWindowStore();
-  
+
   // Get the debate - either from props or active debate
   const debateId = componentProps?.debateId || activeDebateId;
-  const activeDebate = debateId ? getDebateById(debateId) : undefined;
+
+  // Subscribe to the specific debate so component re-renders when it updates
+  const activeDebate = useDebateStore(state =>
+    debateId ? state.debates.find(d => d.id === debateId) : undefined
+  );
   
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'idle'>('idle');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -49,13 +53,13 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
       return;
     }
     
-    // Only connect if we have a proper backend ID (not a local one)
-    if (!activeDebate.id || activeDebate.id.startsWith('debate-')) {
-      addLog('Waiting for backend debate ID...', 'warning');
+    // Must have a valid debate ID
+    if (!activeDebate.id) {
+      addLog('No debate ID available', 'warning');
       return;
     }
     
-    // Only connect if status is in_progress or running
+    // Only connect if status is pending or running
     if (activeDebate.status !== 'running' && activeDebate.status !== 'pending') {
       addLog(`Debate status: ${activeDebate.status}`, 'info');
       return;
@@ -78,8 +82,20 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('[SSE Event]', data); // Debug: log all events
         addLog(`Received: ${data.type}`, 'info');
-        
+
+        // Special logging for argument events
+        if (data.type === 'argument') {
+          console.log('[SSE Argument]', {
+            type: data.type,
+            side: data.side,
+            round: data.round,
+            hasContent: !!data.content,
+            contentLength: data.content?.length
+          });
+        }
+
         switch (data.type) {
           case 'debate_started':
             addLog(`Debate started: "${data.topic}"`, 'success');
@@ -92,28 +108,54 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             break;
             
           case 'argument': {
-            addLog(`${data.side.toUpperCase()} argument (Round ${data.round}): ${data.content.substring(0, 50)}...`, 'success');
-            
-            const newArg: DebateArgument = {
-              side: data.side,
-              content: data.content,
-              round: data.round,
-              timestamp: new Date().toISOString(),
-            };
-            
-            const debate = getDebateById(activeDebate.id);
-            if (debate) {
-              if (data.side === 'pro') {
-                updateDebate(activeDebate.id, {
-                  proArguments: [...debate.proArguments, newArg],
-                  currentArgument: data.content,
-                });
-              } else {
-                updateDebate(activeDebate.id, {
-                  conArguments: [...debate.conArguments, newArg],
-                  currentArgument: data.content,
-                });
+            try {
+              addLog(`${data.side?.toUpperCase() || 'UNKNOWN'} argument (Round ${data.round}): ${data.content?.substring(0, 50) || 'NO CONTENT'}...`, 'success');
+
+              if (!data.side || !data.content || !data.round) {
+                console.error('[SSE] Invalid argument data:', data);
+                addLog(`Invalid argument data received`, 'error');
+                break;
               }
+
+              const newArg: DebateArgument = {
+                side: data.side,
+                content: data.content,
+                round: data.round,
+                timestamp: new Date().toISOString(),
+              };
+
+              // Get fresh debate state from store
+              const debate = useDebateStore.getState().getDebateById(activeDebate.id);
+              console.log('[SSE] Current debate state:', {
+                debateId: activeDebate.id,
+                found: !!debate,
+                proArgsCount: debate?.proArguments?.length || 0,
+                conArgsCount: debate?.conArguments?.length || 0
+              });
+
+              if (debate) {
+                if (data.side === 'pro') {
+                  const updated = {
+                    proArguments: [...debate.proArguments, newArg],
+                    currentArgument: data.content,
+                  };
+                  console.log('[SSE] Updating PRO arguments:', updated.proArguments.length);
+                  updateDebate(activeDebate.id, updated);
+                } else {
+                  const updated = {
+                    conArguments: [...debate.conArguments, newArg],
+                    currentArgument: data.content,
+                  };
+                  console.log('[SSE] Updating CON arguments:', updated.conArguments.length);
+                  updateDebate(activeDebate.id, updated);
+                }
+              } else {
+                console.error('[SSE] Debate not found in store:', activeDebate.id);
+                addLog(`Error: Debate ${activeDebate.id} not found`, 'error');
+              }
+            } catch (err) {
+              console.error('[SSE] Error handling argument:', err);
+              addLog(`Error processing argument: ${err}`, 'error');
             }
             break;
           }
@@ -166,7 +208,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
       eventSource.close();
       eventSourceRef.current = null;
     };
-  }, [activeDebate?.id, activeDebate?.status, updateDebate, getDebateById, addLog]);
+  }, [activeDebate?.id, activeDebate?.status, updateDebate, addLog]);
   
   const handleOpenCrewAIStatus = () => {
     openWindow({
