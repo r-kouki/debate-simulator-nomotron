@@ -28,11 +28,6 @@ const ThemeConsoleWindow = () => {
   const [previewingTheme, setPreviewingTheme] = useState<AiTheme | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
-  const getApiBaseUrl = useCallback(() => {
-    // Theme agent is on TypeScript API (port 4000), debates are on Python API (port 8000)
-    return "http://localhost:4000";
-  }, []);
-
   const generateTheme = useCallback(async () => {
     if (!prompt.trim()) return;
 
@@ -40,8 +35,8 @@ const ThemeConsoleWindow = () => {
     setError(null);
 
     try {
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/api/agents/theme`, {
+      // Use relative URL - Vite proxies /api/agents to the TypeScript API
+      const response = await fetch("/api/agents/theme", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -72,7 +67,7 @@ const ThemeConsoleWindow = () => {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to generate theme");
     }
-  }, [prompt, getApiBaseUrl]);
+  }, [prompt]);
 
   const handleApply = useCallback(() => {
     if (previewingTheme) {
