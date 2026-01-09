@@ -122,19 +122,30 @@ class InternetResearchTool(BaseTool):
     
     def _search_debate(self, topic: str) -> dict:
         """Search for debate-focused content (pro/con/facts)."""
-        results = self._searcher.search_debate_topic(topic)
+        # Use research_topic which returns a ResearchData object
+        research_data = self._searcher.research_topic(topic)
+        
+        # Convert snippets to SearchResult-like dicts for formatting
+        def snippet_to_result(snippet: str) -> dict:
+            return {
+                "title": snippet[:60] + "..." if len(snippet) > 60 else snippet,
+                "url": "",
+                "snippet": snippet,
+                "content": snippet,
+            }
         
         return {
             "type": "debate",
             "topic": topic,
-            "pro_arguments": [self._result_to_dict(r) for r in results.get("pro", [])],
-            "con_arguments": [self._result_to_dict(r) for r in results.get("con", [])],
-            "facts": [self._result_to_dict(r) for r in results.get("facts", [])],
+            "pro_arguments": [snippet_to_result(s) for s in research_data.pro_arguments],
+            "con_arguments": [snippet_to_result(s) for s in research_data.con_arguments],
+            "facts": [snippet_to_result(s) for s in research_data.facts],
         }
     
     def _search_general(self, topic: str) -> dict:
         """Search for general information."""
-        results = self._searcher.search(f"{topic} overview facts", max_results=5)
+        # Use sync version of search
+        results = self._searcher.search_sync(f"{topic} overview facts", num_results=5)
         
         return {
             "type": "general",
@@ -152,7 +163,8 @@ class InternetResearchTool(BaseTool):
         
         all_results = []
         for query in queries:
-            results = self._searcher.search(query, max_results=3)
+            # Use sync version of search
+            results = self._searcher.search_sync(query, num_results=3)
             all_results.extend(results)
         
         return {

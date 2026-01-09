@@ -102,22 +102,22 @@ class DebateGenerationTool(BaseTool):
         # Build prompt with history and constraints
         prompt = self._build_prompt(topic, stance, research_context, round_num)
         
-        # Generate using appropriate model
+        # Generate using appropriate model (increased tokens for structured rebuttals)
         if stance == "pro":
             argument = self._model_manager.generate_pro(
                 prompt,
-                max_tokens=250,  # ~8 sentences max
+                max_tokens=450,  # Longer for Four-Step Refutation format
                 temperature=0.7,
             )
         else:
             argument = self._model_manager.generate_con(
                 prompt,
-                max_tokens=250,
+                max_tokens=450,
                 temperature=0.7,
             )
         
-        # Post-process to enforce sentence limit
-        argument = self._enforce_sentence_limit(argument)
+        # Post-process to enforce sentence limit (increased for structured rebuttals)
+        argument = self._enforce_sentence_limit(argument, max_sentences=12)
         
         # Record in history
         turn = DebateTurn(
@@ -138,59 +138,113 @@ class DebateGenerationTool(BaseTool):
     ) -> str:
         """Build the generation prompt with history and constraints."""
         
-        # System message with strict length constraint
-        system_msg = f"""You are an expert debater arguing the {stance.upper()} position.
-
-CRITICAL RULES:
-1. Respond in EXACTLY 5 sentences. Only use up to 8 sentences if the point is absolutely critical.
-2. Be concise and impactful - every sentence must add value.
-3. Reference specific evidence when available.
-4. Address opponent's arguments directly when responding.
-5. Maintain civil, professional tone."""
-
-        # Build debate history section
-        history_section = self._format_history()
+        # Check if this is an opening argument or a rebuttal
+        is_opening = len(self._debate_history) == 0
+        opponent = "CON" if stance == "pro" else "PRO"
         
-        # Research context section
+        # Get opponent's last argument if available
+        opponent_arg = self._get_opponent_last_argument(stance)
+        
+        # Simplified system message without example phrases
+        if is_opening:
+            system_msg = f"""You are an expert debater arguing {stance.upper()}.
+
+Your task: Write a compelling opening argument.
+
+Requirements:
+- Start with a clear thesis statement
+- Provide 2-3 strong supporting points with specific evidence
+- Use facts, statistics, or real-world examples if available
+- End with a strong conclusion
+- Length: 8-12 sentences total
+- Be specific and persuasive - avoid vague generalities"""
+        else:
+            system_msg = f"""You are an expert debater arguing {stance.upper()}.
+
+Your task: Write a rebuttal that directly counters your opponent's argument.
+
+Requirements:
+- DIRECTLY address what {opponent} just argued - quote or paraphrase their specific points
+- Explain WHY their reasoning or evidence is flawed
+- Provide counter-evidence or new arguments that support YOUR side
+- Length: 8-12 sentences
+- Be specific - reference their actual claims, don't be generic
+- After rebutting, add one NEW point for your side"""
+        
+        # Build research context
         research_section = ""
         if research_context:
             research_section = f"""
-RESEARCH CONTEXT (use relevant points):
-{research_context[:1000]}
+FACTS TO USE (cite these in your argument):
+{research_context[:1200]}
 """
         
-        # Opponent's last argument for direct response
-        opponent_section = ""
-        opponent_last = self._get_opponent_last_argument(stance)
-        if opponent_last:
-            opponent_section = f"""
-OPPONENT'S LAST ARGUMENT (respond to this):
-{opponent_last}
-"""
+        # Build conversation history
+        conversation_section = ""
+        if self._debate_history:
+            conversation_section = "\nPREVIOUS ARGUMENTS:\n"
+            for turn in sorted(self._debate_history, key=lambda t: (t.round_num, t.timestamp)):
+                side_label = "PRO" if turn.stance == "pro" else "CON"
+                conversation_section += f"\n[{side_label} Round {turn.round_num}]:\n{turn.argument}\n"
         
-        # Construct full prompt using Llama 3 format
+        # Simplified instruction
+        if is_opening:
+            instruction = f"""Write your {stance.upper()} opening argument for the debate.
+
+Topic: {topic}
+
+Start your argument now:"""
+        else:
+            instruction = f"""Write your {stance.upper()} rebuttal for Round {round_num}.
+
+Topic: {topic}
+
+Opponent's argument to counter:
+{opponent_arg if opponent_arg else 'No opponent argument yet.'}
+
+Write your rebuttal now (directly address their points, then add your own):"""
+        
         prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
 {system_msg}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-DEBATE TOPIC: {topic}
-YOUR STANCE: {stance.upper()}
-ROUND: {round_num}
-{research_section}{history_section}{opponent_section}
-Generate your {stance} argument now. Remember: 5 sentences (max 8 if critical).<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+{research_section}{conversation_section}
+{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
         return prompt
     
+    def _format_conversation(self) -> str:
+        """Format debate history as a clear back-and-forth conversation."""
+        if not self._debate_history:
+            return "\n[This is the opening argument - no prior arguments to respond to]"
+        
+        lines = ["\n--- DEBATE CONVERSATION SO FAR ---"]
+        lines.append("(You must respond to these points, especially the most recent one)\n")
+        
+        # Sort history by round and timestamp to ensure correct order
+        sorted_history = sorted(self._debate_history, key=lambda t: (t.round_num, t.timestamp))
+        
+        for turn in sorted_history:
+            stance_label = "PRO" if turn.stance == "pro" else "CON"
+            marker = "🟢" if turn.stance == "pro" else "🔴"
+            lines.append(f"{marker} [{stance_label} - Round {turn.round_num}]:")
+            lines.append(f"   {turn.argument}")
+            lines.append("")  # Empty line between turns
+        
+        lines.append("--- END OF CONVERSATION ---")
+        lines.append("YOUR TURN: Respond to the above, especially the most recent argument.")
+        
+        return "\n".join(lines)
+    
     def _format_history(self) -> str:
-        """Format debate history for prompt context."""
+        """Format debate history for prompt context (legacy method)."""
         if not self._debate_history:
             return ""
         
-        lines = ["\nDEBATE HISTORY:"]
+        lines = ["\nDEBATE HISTORY (DO NOT repeat these points):"]
         for turn in self._debate_history[-6:]:  # Last 6 turns (3 rounds)
             stance_label = "PRO" if turn.stance == "pro" else "CON"
-            lines.append(f"[Round {turn.round_num} - {stance_label}]: {turn.argument[:300]}...")
+            lines.append(f"[Round {turn.round_num} - {stance_label}]: {turn.argument}")
         
         return "\n".join(lines)
     

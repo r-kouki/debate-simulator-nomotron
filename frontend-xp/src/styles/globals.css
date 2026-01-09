@@ -674,3 +674,56 @@ body {
   gap: 8px;
 }
 
+/* ===== React Resizable Handle Styles ===== */
+.react-resizable {
+  position: relative;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+}
+
+/* Handle on the right edge */
+.react-resizable-handle-e {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  width: 8px;
+  height: 100%;
+}
+
+/* Handle on the bottom edge */
+.react-resizable-handle-s {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+  height: 8px;
+  width: 100%;
+}
+
+/* Handle on the bottom-right corner */
+.react-resizable-handle-se {
+  right: 0;
+  bottom: 0;
+  cursor: se-resize !important;
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M11 3v8H3l8-8z" fill="%23888"/><path d="M10 4v6H4l6-6z" fill="%23ccc"/></svg>');
+  background-position: bottom right;
+  background-size: 12px 12px;
+  z-index: 10;
+}
+
+/* Make the drag handle (title bar) show grab cursor */
+.window-drag-handle {
+  cursor: grab;
+}
+
+.window-drag-handle:active {
+  cursor: grabbing;
+}

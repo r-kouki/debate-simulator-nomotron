@@ -20,12 +20,14 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
     recommendGuests: false,
     domain: 'auto',
     adapter: 'auto',
+    mode: 'ai_vs_ai',
+    humanSide: 'pro',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!config.topic.trim()) {
       addNotification({
         title: 'Error',
@@ -43,25 +45,27 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
       const response = await debateApi.createDebate(config);
       const debateId = response.id;
       console.log('[CrewAI] Backend debate created:', response);
-      
+
       // Create local state for the debate
       const debate = {
         id: debateId,
         topic: config.topic,
         domain: config.domain || 'general',
         rounds: config.rounds,
-        status: 'pending' as const,  // Use 'pending' - backend will update to 'running'
+        status: 'pending' as const,
         startTime: new Date().toISOString(),
         currentRound: 0,
-        currentStep: 'Connecting to CrewAI...',
+        currentStep: config.mode === 'human_vs_ai' ? 'Waiting for connection...' : 'Connecting to CrewAI...',
         progress: 0,
         proArguments: [],
         conArguments: [],
+        humanMode: config.mode === 'human_vs_ai',
+        humanSide: config.humanSide,
       };
 
       addDebate(debate);
       setActiveDebate(debateId);
-      
+
       // Close creator and open viewer
       closeWindow(windowId);
       openWindow({
@@ -84,7 +88,7 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
         message: 'Failed to connect to CrewAI backend. Make sure the server is running on port 5040.',
         type: 'error',
       });
-      
+
       // Open the status window so user can check
       openWindow({
         id: 'crewai-status-check',
@@ -120,17 +124,68 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
                 key={num}
                 type="button"
                 onClick={() => setConfig({ ...config, rounds: num })}
-                className={`w-8 h-8 rounded ${
-                  config.rounds === num
+                className={`w-8 h-8 rounded ${config.rounds === num
                     ? 'bg-[#316AC5] text-white'
                     : 'xp-button'
-                }`}
+                  }`}
               >
                 {num}
               </button>
             ))}
           </div>
         </div>
+
+        {/* Mode Selector */}
+        <fieldset className="border-2 border-gray-300 p-3 rounded">
+          <legend className="px-2 text-sm font-bold">Debate Mode</legend>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                checked={config.mode === 'ai_vs_ai'}
+                onChange={() => setConfig({ ...config, mode: 'ai_vs_ai' })}
+              />
+              <span className="text-sm">🤖 AI vs AI</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                checked={config.mode === 'human_vs_ai'}
+                onChange={() => setConfig({ ...config, mode: 'human_vs_ai' })}
+              />
+              <span className="text-sm">👤 Human vs AI</span>
+            </label>
+          </div>
+
+          {/* Human Side Selector (only shown in human mode) */}
+          {config.mode === 'human_vs_ai' && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <p className="text-sm mb-2">Play as:</p>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="humanSide"
+                    checked={config.humanSide === 'pro'}
+                    onChange={() => setConfig({ ...config, humanSide: 'pro' })}
+                  />
+                  <span className="text-sm text-green-700 font-bold">🟢 PRO (For)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="humanSide"
+                    checked={config.humanSide === 'con'}
+                    onChange={() => setConfig({ ...config, humanSide: 'con' })}
+                  />
+                  <span className="text-sm text-red-700 font-bold">🔴 CON (Against)</span>
+                </label>
+              </div>
+            </div>
+          )}
+        </fieldset>
 
         {/* Domain Selector */}
         <div className="flex items-center gap-4">
@@ -178,7 +233,7 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
         <div className="bg-blue-50 border border-blue-200 p-3 rounded text-xs">
           <p className="font-bold text-blue-800 mb-1">🤖 CrewAI Mode</p>
           <p className="text-blue-600">
-            Debates use CrewAI agents with the local Llama model. 
+            Debates use CrewAI agents with the local Llama model.
             Make sure the backend server is running on port 5040.
           </p>
         </div>

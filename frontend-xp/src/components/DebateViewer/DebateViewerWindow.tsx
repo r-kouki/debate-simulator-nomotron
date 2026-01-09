@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDebateStore, useWindowStore } from '@/stores';
 import { DebateArgument } from '@/types';
+import { debateApi } from '@/api/debateApi';
 
 interface LogEntry {
   timestamp: string;
@@ -28,57 +29,62 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
   const activeDebate = useDebateStore(state =>
     debateId ? state.debates.find(d => d.id === debateId) : undefined
   );
-  
+
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'idle'>('idle');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showLogs, setShowLogs] = useState(true);
-  
+  const [humanInput, setHumanInput] = useState('');
+  const [isWaitingForHuman, setIsWaitingForHuman] = useState(false);
+  const [expectedSide, setExpectedSide] = useState<'pro' | 'con' | null>(null);
+  const [currentRoundNum, setCurrentRoundNum] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Add log entry helper
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     setLogs(prev => [...prev, { timestamp, message, type }]);
   }, []);
-  
+
   // Auto-scroll logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
-  
+
   // Connect to SSE stream when debate starts
   useEffect(() => {
     if (!activeDebate) {
       return;
     }
-    
+
     // Must have a valid debate ID
     if (!activeDebate.id) {
       addLog('No debate ID available', 'warning');
       return;
     }
-    
-    // Only connect if status is pending or running
-    if (activeDebate.status !== 'running' && activeDebate.status !== 'pending') {
+
+    // Only connect if status is pending, running, or waiting for human
+    if (activeDebate.status !== 'running' && activeDebate.status !== 'pending' && activeDebate.status !== 'waiting_for_human') {
       addLog(`Debate status: ${activeDebate.status}`, 'info');
       return;
     }
-    
+
     addLog(`Connecting to CrewAI backend for debate: ${activeDebate.id}`, 'info');
     setConnectionStatus('connecting');
-    
+
     const sseUrl = `http://localhost:5040/api/debates/${activeDebate.id}/stream`;
     addLog(`SSE URL: ${sseUrl}`, 'info');
-    
+
     const eventSource = new EventSource(sseUrl);
     eventSourceRef.current = eventSource;
-    
+
     eventSource.onopen = () => {
       addLog('✓ Connected to CrewAI stream', 'success');
       setConnectionStatus('connected');
     };
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -101,12 +107,12 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             addLog(`Debate started: "${data.topic}"`, 'success');
             updateDebate(activeDebate.id, { status: 'running' });
             break;
-            
+
           case 'round_start':
             addLog(`Round ${data.round} beginning...`, 'info');
             updateDebate(activeDebate.id, { currentRound: data.round });
             break;
-            
+
           case 'argument': {
             try {
               addLog(`${data.side?.toUpperCase() || 'UNKNOWN'} argument (Round ${data.round}): ${data.content?.substring(0, 50) || 'NO CONTENT'}...`, 'success');
@@ -159,36 +165,44 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             }
             break;
           }
-            
+
           case 'round_end':
             addLog(`Round ${data.round} complete`, 'info');
             break;
-            
+
           case 'debate_complete':
             addLog(`Debate complete! Winner: ${data.winner || 'Draw'}`, 'success');
-            updateDebate(activeDebate.id, { 
+            updateDebate(activeDebate.id, {
               status: 'completed',
               judgeScore: data.judgeScore,
             });
             eventSource.close();
             setConnectionStatus('idle');
             break;
-            
+
           case 'error':
             addLog(`Error: ${data.message}`, 'error');
-            updateDebate(activeDebate.id, { 
+            updateDebate(activeDebate.id, {
               status: 'error',
               error: data.message,
             });
             eventSource.close();
             setConnectionStatus('error');
             break;
-            
+
           case 'log':
             // Verbose log from backend
             addLog(`[CrewAI] ${data.message}`, 'info');
             break;
-            
+
+          case 'waiting_for_human':
+            addLog(`Your turn! ${data.message}`, 'success');
+            setIsWaitingForHuman(true);
+            setExpectedSide(data.expected_side || data.human_side);
+            setCurrentRoundNum(data.round);
+            updateDebate(activeDebate.id, { status: 'waiting_for_human' as any });
+            break;
+
           default:
             addLog(`Unknown event type: ${data.type}`, 'warning');
         }
@@ -196,20 +210,20 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
         addLog(`Parse error: ${event.data}`, 'error');
       }
     };
-    
+
     eventSource.onerror = (error) => {
       console.error('SSE Error:', error);
       addLog('Connection error - CrewAI may not be running', 'error');
       setConnectionStatus('error');
       eventSource.close();
     };
-    
+
     return () => {
       eventSource.close();
       eventSourceRef.current = null;
     };
   }, [activeDebate?.id, activeDebate?.status, updateDebate, addLog]);
-  
+
   const handleOpenCrewAIStatus = () => {
     openWindow({
       id: 'crewai-status-check',
@@ -218,11 +232,29 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
       component: 'crewai-status',
     });
   };
-  
+
   const handleClearLogs = () => {
     setLogs([]);
   };
-  
+
+  const handleSubmitHumanTurn = async () => {
+    if (!activeDebate || !humanInput.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      addLog(`Submitting your ${expectedSide?.toUpperCase()} argument...`, 'info');
+      await debateApi.submitHumanTurn(activeDebate.id, humanInput);
+      addLog('Argument submitted successfully!', 'success');
+      setHumanInput('');
+      setIsWaitingForHuman(false);
+    } catch (error) {
+      console.error('Failed to submit human turn:', error);
+      addLog(`Failed to submit: ${error}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!activeDebate) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -235,15 +267,15 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
       </div>
     );
   }
-  
+
   const { topic, proArguments, conArguments, status, judgeScore } = activeDebate;
-  
+
   // Combine and sort arguments by round
   const allArguments = [...proArguments, ...conArguments].sort((a, b) => {
     if (a.round !== b.round) return a.round - b.round;
     return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
   });
-  
+
   // Group arguments by round
   const argumentsByRound: Record<number, typeof allArguments> = {};
   allArguments.forEach(arg => {
@@ -252,7 +284,32 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
     }
     argumentsByRound[arg.round].push(arg);
   });
-  
+
+  // Smart detection for when it's human's turn (backup for SSE events)
+  const computeIsHumanTurn = () => {
+    if (!activeDebate.humanMode) return false;
+    if (status === 'completed' || status === 'error' || status === 'stopped') return false;
+
+    const humanSide = activeDebate.humanSide || 'pro';
+
+    // PRO is always the side that goes first
+    // If human is PRO: they go when pro args == con args (need to add next pro)
+    // If human is CON: they go when pro args == con args + 1 (need to add next con)
+
+    if (humanSide === 'pro') {
+      // Human PRO goes when pro args == con args (need to add next pro)
+      return proArguments.length === conArguments.length;
+    } else {
+      // Human CON goes when pro args == con args + 1 (need to add next con)
+      return proArguments.length === conArguments.length + 1;
+    }
+  };
+
+  // Use SSE state OR computed state
+  const shouldShowHumanInput = activeDebate.humanMode && (isWaitingForHuman || computeIsHumanTurn());
+  const humanTurnSide = expectedSide || activeDebate.humanSide || 'pro';
+  const humanTurnRound = currentRoundNum || Math.floor((proArguments.length + conArguments.length) / 2) + 1;
+
   return (
     <div className="debate-viewer">
       {/* Status Bar */}
@@ -267,14 +324,17 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             {connectionStatus === 'error' && '🔴 Connection Error'}
             {connectionStatus === 'idle' && '⚪ Idle'}
           </span>
-          <span className="debate-mode">Mode: AI vs AI (CrewAI)</span>
+          <span className="debate-mode">
+            Mode: {activeDebate.humanMode ? `👤 Human vs AI (You: ${activeDebate.humanSide?.toUpperCase()})` : '🤖 AI vs AI'}
+          </span>
           <span className={`debate-status ${status}`}>
-            {status === 'running' || status === 'pending' ? '🔄 In Progress' : 
-             status === 'completed' ? '✅ Completed' : '❌ Error'}
+            {status === 'running' || status === 'pending' ? '🔄 In Progress' :
+              status === 'waiting_for_human' ? '⏳ Your Turn!' :
+                status === 'completed' ? '✅ Completed' : '❌ Error'}
           </span>
         </div>
       </div>
-      
+
       {/* Main Content Area */}
       <div className="debate-content-area">
         {/* Arguments Panel */}
@@ -283,7 +343,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             <div className="side-label pro">🟢 PRO</div>
             <div className="side-label con">🔴 CON</div>
           </div>
-          
+
           <div className="arguments-container">
             {Object.keys(argumentsByRound).length === 0 ? (
               <div className="waiting-for-arguments">
@@ -312,7 +372,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
               ))
             )}
           </div>
-          
+
           {/* Winner Display */}
           {status === 'completed' && judgeScore && (
             <div className="winner-display">
@@ -324,8 +384,52 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
               </div>
             </div>
           )}
+
+          {/* Human Input Panel (for Human vs AI mode) */}
+          {shouldShowHumanInput && (
+            <div className="human-input-panel" style={{
+              padding: '16px',
+              backgroundColor: humanTurnSide === 'pro' ? '#d4edda' : '#f8d7da',
+              border: `2px solid ${humanTurnSide === 'pro' ? '#28a745' : '#dc3545'}`,
+              borderRadius: '8px',
+              marginTop: '16px',
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                {humanTurnSide === 'pro' ? '🟢' : '🔴'} Your Turn - Round {humanTurnRound} {humanTurnSide?.toUpperCase()} Argument
+              </div>
+              <textarea
+                value={humanInput}
+                onChange={(e) => setHumanInput(e.target.value)}
+                placeholder="Enter your debate argument... Use the Four-Step Refutation format: Signal what opponent said → State your counter → Support with evidence → Summarize impact"
+                style={{
+                  width: '100%',
+                  height: '120px',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  fontSize: '13px',
+                }}
+                disabled={isSubmitting}
+              />
+              <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  className="xp-button"
+                  onClick={handleSubmitHumanTurn}
+                  disabled={!humanInput.trim() || isSubmitting}
+                  style={{ padding: '8px 16px' }}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Argument'}
+                </button>
+                <span style={{ fontSize: '12px', color: '#666' }}>
+                  {humanInput.length} characters
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-        
+
         {/* Logs Panel */}
         {showLogs && (
           <div className="logs-panel">
@@ -348,7 +452,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
           </div>
         )}
       </div>
-      
+
       {/* Footer Actions */}
       <div className="debate-footer">
         <button className="xp-button" onClick={handleOpenCrewAIStatus}>

@@ -51,6 +51,8 @@ class DebateRequest(BaseModel):
     recommend_guests: bool = False
     domain: Optional[str] = "auto"
     adapter: Optional[str] = "auto"
+    mode: str = Field(default="ai_vs_ai", description="Debate mode: 'ai_vs_ai' or 'human_vs_ai'")
+    human_side: Optional[str] = Field(default=None, description="If human_vs_ai mode, which side human plays: 'pro' or 'con'")
 
 
 class DebateResponse(BaseModel):
@@ -79,7 +81,7 @@ class DebateSession(BaseModel):
     topic: str
     domain: str
     rounds: int
-    status: str  # 'pending', 'running', 'completed', 'error', 'stopped'
+    status: str  # 'pending', 'running', 'completed', 'error', 'stopped', 'waiting_for_human'
     start_time: str
     end_time: Optional[str] = None
     current_round: int = 0
@@ -90,6 +92,8 @@ class DebateSession(BaseModel):
     current_argument: Optional[str] = None
     judge_score: Optional[JudgeScore] = None
     error: Optional[str] = None
+    mode: str = "ai_vs_ai"  # 'ai_vs_ai' or 'human_vs_ai'
+    human_side: Optional[str] = None  # 'pro' or 'con' if human mode
 
 
 class Settings(BaseModel):
@@ -113,12 +117,18 @@ class AdapterInfo(BaseModel):
     path: str
 
 
+class HumanTurnRequest(BaseModel):
+    """Request body for submitting a human's debate turn."""
+    argument: str = Field(..., min_length=10, description="The human's debate argument")
+
+
 # ============================================================================
 # In-memory storage (replace with database in production)
 # ============================================================================
 
 debates: dict[str, DebateSession] = {}
 debate_progress_queues: dict[str, asyncio.Queue] = {}
+human_turn_queues: dict[str, asyncio.Queue] = {}  # Queue for human turn submissions
 settings: Settings = Settings()
 
 # Pre-loaded CrewAI debate crew with models loaded in memory
@@ -419,7 +429,20 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             fact_check_passed=True
         )
         
-        # Send completion with proper type
+        # Send completion with proper type (including recommended guests)
+        guests_data = []
+        if result.recommended_guests:
+            guests_data = [
+                {
+                    "name": g.name,
+                    "credentials": g.credentials,
+                    "stance": g.known_stance,
+                    "bio": g.bio,
+                    "sourceUrl": g.source_url,
+                }
+                for g in result.recommended_guests
+            ]
+        
         await send_progress(
             "debate_complete", "Completed", request.rounds, 100,
             f"Debate completed! Winner: {result.judge_score.winner.upper()}",
@@ -430,7 +453,8 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
                     "proScore": result.judge_score.pro_score,
                     "conScore": result.judge_score.con_score,
                     "reasoning": result.judge_score.reasoning,
-                }
+                },
+                "recommendedGuests": guests_data,
             }
         )
         
@@ -457,7 +481,227 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             })
 
 
-# ============================================================================
+async def run_human_vs_ai_debate(debate_id: str, request: DebateRequest):
+    """Run a human vs AI debate with turn-based interaction."""
+    debate = debates.get(debate_id)
+    if not debate:
+        print(f"[ERROR] Debate {debate_id} not found in store")
+        return
+    
+    queue = debate_progress_queues.get(debate_id)
+    human_queue = human_turn_queues.get(debate_id)
+    
+    print(f"\n{'='*60}")
+    print(f"STARTING HUMAN VS AI DEBATE: {debate_id}")
+    print(f"Topic: {request.topic}")
+    print(f"Rounds: {request.rounds}")
+    print(f"Human side: {request.human_side}")
+    print(f"{'='*60}\n")
+    
+    async def send_progress(event_type: str, step: str, round_num: int, progress: float, message: str, argument: dict = None, extra: dict = None):
+        """Helper to send progress updates."""
+        debate.current_step = step
+        debate.current_round = round_num
+        debate.progress = progress
+        
+        print(f"  [{step}] Round {round_num} - {progress:.1f}% - {message}")
+        
+        if argument:
+            arg = DebateArgument(
+                side=argument["side"],
+                round=argument.get("round", round_num),
+                content=argument["content"],
+                timestamp=datetime.now().isoformat()
+            )
+            if argument["side"] == "pro":
+                debate.pro_arguments.append(arg)
+            else:
+                debate.con_arguments.append(arg)
+            debate.current_argument = arg.content
+        
+        if queue:
+            event_data = {
+                "type": event_type,
+                "debate_id": debate_id,
+                "status": debate.status,
+                "step": step,
+                "round": round_num,
+                "progress": progress,
+                "message": message,
+                "mode": "human_vs_ai",
+                "human_side": request.human_side,
+            }
+            if argument:
+                event_data["side"] = argument["side"]
+                event_data["content"] = argument["content"]
+            if extra:
+                event_data.update(extra)
+            await queue.put(event_data)
+    
+    try:
+        debate.status = "running"
+        await send_progress("debate_started", "Initializing", 0, 0, "Starting Human vs AI debate...", extra={"topic": request.topic})
+        
+        # Use preloaded crew or create new one
+        crew = preloaded_crew
+        if crew is None:
+            print("[WARNING] No preloaded crew available, creating new one...")
+            crew = DebateCrew(
+                use_internet=request.use_internet,
+                output_dir=PROJECT_ROOT / "runs" / "debates",
+                verbose=True,
+            )
+        
+        # Initialize debate tools
+        crew._init_debate_tools()
+        crew._debate_tool_pro.clear_history()
+        crew._debate_tool_con.clear_history()
+        
+        # Determine AI side
+        ai_side = "con" if request.human_side == "pro" else "pro"
+        
+        # Route domain
+        from src.crew.agents.router_agent import classify_domain
+        domain, _ = classify_domain(request.topic)
+        
+        # Gather research
+        await send_progress("log", "Researching", 0, 10, "Gathering research context...")
+        research_context = crew._gather_research(request.topic)
+        
+        pro_arguments = []
+        con_arguments = []
+        
+        for round_num in range(1, request.rounds + 1):
+            # Determine turn order (Pro always goes first)
+            turns = [("pro", round_num), ("con", round_num)]
+            
+            for side, rnd in turns:
+                is_human_turn = (side == request.human_side)
+                
+                if is_human_turn:
+                    # Wait for human input
+                    debate.status = "waiting_for_human"
+                    await send_progress(
+                        "waiting_for_human", 
+                        f"Waiting for your {side.upper()} argument", 
+                        rnd, 
+                        20 + (rnd * 30) - 15, 
+                        f"Your turn! Enter your {side.upper()} argument for Round {rnd}.",
+                        extra={"expected_side": side, "round": rnd}
+                    )
+                    
+                    print(f"  [WAITING] For human {side.upper()} argument...")
+                    
+                    # Wait for human submission (with timeout)
+                    try:
+                        human_arg = await asyncio.wait_for(human_queue.get(), timeout=600)  # 10 min timeout
+                        print(f"  [RECEIVED] Human argument: {human_arg[:100]}...")
+                    except asyncio.TimeoutError:
+                        raise Exception("Timeout waiting for human input")
+                    
+                    debate.status = "running"
+                    
+                    # Record the human argument
+                    if side == "pro":
+                        pro_arguments.append(human_arg)
+                        crew._debate_tool_con.add_external_turn("pro", human_arg, rnd)
+                    else:
+                        con_arguments.append(human_arg)
+                        crew._debate_tool_pro.add_external_turn("con", human_arg, rnd)
+                    
+                    await send_progress(
+                        "argument",
+                        f"Human {side.upper()}",
+                        rnd,
+                        20 + (rnd * 30),
+                        f"Human {side.upper()} argument received",
+                        argument={"side": side, "content": human_arg, "round": rnd, "is_human": True}
+                    )
+                    
+                else:
+                    # AI generates argument
+                    await send_progress("log", f"AI {side.upper()} Thinking", rnd, 20 + (rnd * 30) - 10, f"AI generating {side.upper()} argument...")
+                    
+                    ai_arg = crew._generate_argument(
+                        topic=request.topic,
+                        domain=domain,
+                        stance=side,
+                        research_context=research_context,
+                        round_num=rnd,
+                    )
+                    
+                    if side == "pro":
+                        pro_arguments.append(ai_arg)
+                        crew._debate_tool_con.add_external_turn("pro", ai_arg, rnd)
+                    else:
+                        con_arguments.append(ai_arg)
+                        crew._debate_tool_pro.add_external_turn("con", ai_arg, rnd)
+                    
+                    await send_progress(
+                        "argument",
+                        f"AI {side.upper()}",
+                        rnd,
+                        20 + (rnd * 30),
+                        f"AI {side.upper()} argument generated",
+                        argument={"side": side, "content": ai_arg, "round": rnd, "is_human": False}
+                    )
+        
+        # Fact-check and judge
+        await send_progress("log", "Fact Checking", request.rounds, 85, "Verifying arguments...")
+        fact_check = crew._fact_check_debate(pro_arguments, con_arguments, research_context)
+        
+        await send_progress("log", "Judging", request.rounds, 90, "Judge evaluating...")
+        from src.crew.agents.judge_agent import judge_debate
+        judge_score = judge_debate(pro_arguments, con_arguments, fact_check)
+        
+        # Complete
+        debate.status = "completed"
+        debate.end_time = datetime.now().isoformat()
+        debate.progress = 100
+        debate.judge_score = JudgeScore(
+            winner=judge_score.winner,
+            pro_score=judge_score.pro_score,
+            con_score=judge_score.con_score,
+            reasoning=judge_score.reasoning,
+            fact_check_passed=True
+        )
+        
+        await send_progress(
+            "debate_complete", "Completed", request.rounds, 100,
+            f"Debate complete! Winner: {judge_score.winner.upper()}",
+            extra={
+                "winner": judge_score.winner,
+                "judgeScore": {
+                    "winner": judge_score.winner,
+                    "proScore": judge_score.pro_score,
+                    "conScore": judge_score.con_score,
+                    "reasoning": judge_score.reasoning,
+                }
+            }
+        )
+        
+        save_debate_result(debate)
+        print(f"\n{'='*60}")
+        print(f"HUMAN VS AI DEBATE COMPLETE: {debate_id}")
+        print(f"Winner: {judge_score.winner}")
+        print(f"{'='*60}\n")
+        
+    except Exception as e:
+        import traceback
+        print(f"\n[ERROR] Human vs AI debate failed: {e}")
+        traceback.print_exc()
+        
+        debate.status = "error"
+        debate.error = str(e)
+        if queue:
+            await queue.put({
+                "type": "error",
+                "debate_id": debate_id,
+                "status": "error",
+                "step": "Error",
+                "round": 0,
+                "message": str(e),
+            })
 # FastAPI App
 # ============================================================================
 
@@ -600,6 +844,13 @@ async def create_debate(request: DebateRequest, background_tasks: BackgroundTask
             detail=f"CrewAI is not available: {CREWAI_ERROR}. Please check the server logs."
         )
     
+    # Validate human mode settings
+    if request.mode == "human_vs_ai" and request.human_side not in ("pro", "con"):
+        raise HTTPException(
+            status_code=400,
+            detail="human_side must be 'pro' or 'con' when mode is 'human_vs_ai'"
+        )
+    
     debate_id = f"debate-{uuid.uuid4().hex[:12]}"
     
     # Determine domain
@@ -612,18 +863,27 @@ async def create_debate(request: DebateRequest, background_tasks: BackgroundTask
         rounds=request.rounds,
         status="pending",
         start_time=datetime.now().isoformat(),
+        mode=request.mode,
+        human_side=request.human_side,
     )
     
     debates[debate_id] = debate
     debate_progress_queues[debate_id] = asyncio.Queue()
     
-    # Start CrewAI debate in background
-    background_tasks.add_task(run_crewai_debate, debate_id, request)
+    # Create human turn queue for human vs AI mode
+    if request.mode == "human_vs_ai":
+        human_turn_queues[debate_id] = asyncio.Queue()
+    
+    # Start debate in background
+    if request.mode == "ai_vs_ai":
+        background_tasks.add_task(run_crewai_debate, debate_id, request)
+    else:
+        background_tasks.add_task(run_human_vs_ai_debate, debate_id, request)
     
     return DebateResponse(
         id=debate_id,
         status="created",
-        message="Debate created and starting..."
+        message=f"Debate created ({request.mode} mode)..."
     )
 
 
@@ -661,6 +921,32 @@ async def delete_debate(debate_id: str):
         shutil.rmtree(debate_dir)
     
     return {"status": "deleted"}
+
+
+@app.post("/api/debates/{debate_id}/human-turn")
+async def submit_human_turn(debate_id: str, turn: HumanTurnRequest):
+    """Submit a human's debate turn argument."""
+    if debate_id not in debates:
+        raise HTTPException(status_code=404, detail="Debate not found")
+    
+    debate = debates[debate_id]
+    
+    if debate.mode != "human_vs_ai":
+        raise HTTPException(status_code=400, detail="This debate is not in human_vs_ai mode")
+    
+    if debate.status != "waiting_for_human":
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Not waiting for human input. Current status: {debate.status}"
+        )
+    
+    if debate_id not in human_turn_queues:
+        raise HTTPException(status_code=500, detail="Human turn queue not found")
+    
+    # Put the human argument in the queue
+    await human_turn_queues[debate_id].put(turn.argument)
+    
+    return {"status": "submitted", "message": "Argument submitted successfully"}
 
 
 @app.post("/api/debates/{debate_id}/stop")

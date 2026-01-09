@@ -1,4 +1,4 @@
-export type DebateStatus = 'pending' | 'running' | 'completed' | 'error' | 'stopped';
+export type DebateStatus = 'pending' | 'running' | 'completed' | 'error' | 'stopped' | 'waiting_for_human';
 
 export interface DebateConfig {
   topic: string;
@@ -7,6 +7,8 @@ export interface DebateConfig {
   recommendGuests: boolean;
   domain?: string;
   adapter?: string;
+  mode?: 'ai_vs_ai' | 'human_vs_ai';
+  humanSide?: 'pro' | 'con';
 }
 
 export interface JudgeScore {

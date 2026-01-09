@@ -21,29 +21,35 @@ interface WindowStore {
 
 const generateWindowId = () => `window-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-const getDefaultPosition = (index: number): Position => ({
-  x: 100 + (index * 30),
-  y: 80 + (index * 30),
-});
+const getDefaultPosition = (index: number): Position => {
+  // Center windows on a 1920x1080 screen (approx 960, 540 center)
+  // Offset each new window slightly to cascade
+  return {
+    x: 400 + (index * 30),
+    y: 150 + (index * 30),
+  };
+};
 
 const getDefaultSize = (component: WindowComponent): Size => {
   switch (component) {
     case 'debate-creator':
-      return { width: 500, height: 450 };
+      return { width: 550, height: 580 };  // Increased
     case 'debate-viewer':
-      return { width: 700, height: 550 };
+      return { width: 850, height: 650 };  // Increased
     case 'results-viewer':
-      return { width: 800, height: 600 };
+      return { width: 900, height: 700 };  // Increased
     case 'history':
-      return { width: 700, height: 500 };
+      return { width: 800, height: 600 };  // Increased
     case 'settings':
-      return { width: 480, height: 420 };
+      return { width: 550, height: 500 };  // Increased
     case 'about':
-      return { width: 400, height: 320 };
+      return { width: 450, height: 380 };  // Increased
     case 'my-computer':
-      return { width: 600, height: 450 };
+      return { width: 700, height: 550 };  // Increased
+    case 'crewai-status':
+      return { width: 600, height: 500 };  // Added
     default:
-      return { width: 600, height: 400 };
+      return { width: 700, height: 500 };  // Increased
   }
 };
 

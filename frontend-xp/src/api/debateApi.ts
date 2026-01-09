@@ -19,6 +19,8 @@ export const debateApi = {
       recommend_guests: config.recommendGuests,
       domain: config.domain,
       adapter: config.adapter,
+      mode: config.mode || 'ai_vs_ai',
+      human_side: config.humanSide,
     });
     return response.data;
   },
@@ -51,6 +53,14 @@ export const debateApi = {
    */
   stopDebate: async (id: string): Promise<void> => {
     await apiClient.post(`/debates/${id}/stop`);
+  },
+
+  /**
+   * Submit a human's debate turn (for human_vs_ai mode)
+   */
+  submitHumanTurn: async (debateId: string, argument: string): Promise<{ status: string; message: string }> => {
+    const response = await apiClient.post(`/debates/${debateId}/human-turn`, { argument });
+    return response.data;
   },
 
   /**
