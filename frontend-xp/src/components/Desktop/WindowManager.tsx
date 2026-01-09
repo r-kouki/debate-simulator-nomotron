@@ -8,6 +8,7 @@ import { HistoryWindow } from '@/components/History/HistoryWindow';
 import { SettingsWindow } from '@/components/Settings/SettingsWindow';
 import { AboutWindow } from '@/components/About/AboutWindow';
 import { MyComputerWindow } from '@/components/MyComputer/MyComputerWindow';
+import { CrewAIStatusWindow } from '@/components/CrewAIStatus/CrewAIStatusWindow';
 
 const windowComponents: Record<string, React.ComponentType<{ windowId: string; componentProps?: Record<string, unknown> }>> = {
   'debate-creator': DebateCreatorWindow,
@@ -17,6 +18,7 @@ const windowComponents: Record<string, React.ComponentType<{ windowId: string; c
   'settings': SettingsWindow,
   'about': AboutWindow,
   'my-computer': MyComputerWindow,
+  'crewai-status': CrewAIStatusWindow,
 };
 
 export const WindowManager: React.FC = () => {

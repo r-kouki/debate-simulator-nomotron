@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 FastAPI server for the Windows XP-themed Debate Simulator frontend.
-Provides API endpoints for debate management, real-time progress streaming,
-and settings management.
+Provides API endpoints for debate management with CrewAI integration.
+NO SIMULATION MODE - Uses real CrewAI only.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import uuid
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, AsyncGenerator
@@ -24,13 +25,19 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import CrewAI components if available
+# Import CrewAI components
 try:
     from src.crew.debate_crew import DebateCrew
     CREWAI_AVAILABLE = True
-except ImportError:
+    CREWAI_ERROR = None
+except ImportError as e:
     CREWAI_AVAILABLE = False
-    print("Warning: CrewAI not available, using simulation mode")
+    CREWAI_ERROR = str(e)
+    print(f"ERROR: CrewAI not available: {e}")
+except Exception as e:
+    CREWAI_AVAILABLE = False
+    CREWAI_ERROR = str(e)
+    print(f"ERROR: Failed to import CrewAI: {e}")
 
 
 # ============================================================================
@@ -179,111 +186,144 @@ def load_debate_history() -> List[DebateSession]:
     return history
 
 
-async def run_simulated_debate(debate_id: str, request: DebateRequest):
-    """Simulate a debate (used when CrewAI is not available)."""
+async def run_crewai_debate(debate_id: str, request: DebateRequest):
+    """Run an actual debate using CrewAI with verbose progress logging."""
     debate = debates.get(debate_id)
     if not debate:
+        print(f"[ERROR] Debate {debate_id} not found in store")
         return
     
     queue = debate_progress_queues.get(debate_id)
     
-    # Update status to running
-    debate.status = "running"
+    print(f"\n{'='*60}")
+    print(f"STARTING CREWAI DEBATE: {debate_id}")
+    print(f"Topic: {request.topic}")
+    print(f"Rounds: {request.rounds}")
+    print(f"Use Internet: {request.use_internet}")
+    print(f"{'='*60}\n")
     
-    steps = [
-        ("routing", "Routing to Domain"),
-        ("research", "Research Phase"),
-        ("pro-argument", "Pro Argument"),
-        ("con-argument", "Con Argument"),
-        ("fact-check", "Fact Checking"),
-        ("judge", "Judge Evaluation"),
-    ]
+    async def send_progress(step: str, round_num: int, progress: float, message: str, argument: dict = None):
+        """Helper to send progress updates."""
+        debate.current_step = step
+        debate.current_round = round_num
+        debate.progress = progress
+        
+        print(f"  [{step}] Round {round_num} - {progress:.1f}% - {message}")
+        
+        if argument:
+            arg = DebateArgument(
+                side=argument["side"],
+                round=round_num,
+                content=argument["content"],
+                timestamp=datetime.now().isoformat()
+            )
+            if argument["side"] == "pro":
+                debate.pro_arguments.append(arg)
+            else:
+                debate.con_arguments.append(arg)
+            debate.current_argument = arg.content
+            print(f"    → {argument['side'].upper()} argument: {argument['content'][:100]}...")
+        
+        if queue:
+            await queue.put({
+                "debate_id": debate_id,
+                "status": debate.status,
+                "step": step,
+                "round": round_num,
+                "progress": progress,
+                "message": message,
+                "argument": argument,
+            })
     
     try:
-        for round_num in range(1, request.rounds + 1):
-            for step_idx, (step_id, step_name) in enumerate(steps):
-                if debate.status == "stopped":
-                    return
-                
-                debate.current_round = round_num
-                debate.current_step = step_name
-                debate.progress = ((round_num - 1) * len(steps) + step_idx + 1) / (request.rounds * len(steps)) * 100
-                
-                # Notify progress
+        # Update status to running
+        debate.status = "running"
+        await send_progress("Initializing", 0, 0, "Loading CrewAI...")
+        
+        # Initialize CrewAI debate crew
+        print("[1/6] Initializing DebateCrew...")
+        crew = DebateCrew(
+            use_internet=request.use_internet,
+            output_dir=PROJECT_ROOT / "runs" / "debates",
+            verbose=True,
+        )
+        
+        await send_progress("Routing to Domain", 0, 5, "Classifying domain...")
+        
+        # Run the debate synchronously in a thread pool
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(
+                executor,
+                crew.run_debate,
+                request.topic,
+                request.rounds,
+                request.recommend_guests,
+            )
+        
+        # Process results
+        print(f"\n[RESULT] Debate completed!")
+        print(f"  Winner: {result.judge_score.winner}")
+        print(f"  Pro Score: {result.judge_score.pro_score}")
+        print(f"  Con Score: {result.judge_score.con_score}")
+        
+        # Update debate with results
+        for i, pro_arg in enumerate(result.pro_arguments):
+            arg = DebateArgument(
+                side="pro",
+                round=i + 1,
+                content=pro_arg,
+                timestamp=datetime.now().isoformat()
+            )
+            if arg not in debate.pro_arguments:
+                debate.pro_arguments.append(arg)
                 if queue:
                     await queue.put({
                         "debate_id": debate_id,
-                        "status": debate.status,
-                        "step": step_name,
-                        "round": round_num,
-                        "progress": debate.progress,
-                        "message": f"Round {round_num}: {step_name}",
+                        "status": "running",
+                        "step": "Pro Argument",
+                        "round": i + 1,
+                        "progress": 20 + (i * 30 / max(1, len(result.pro_arguments))),
+                        "message": f"Pro argument round {i+1}",
+                        "argument": {"side": "pro", "content": pro_arg},
                     })
-                
-                # Simulate argument generation
-                if step_id == "pro-argument":
-                    await asyncio.sleep(1.5)
-                    arg = DebateArgument(
-                        side="pro",
-                        round=round_num,
-                        content=f"[Simulated Pro Argument - Round {round_num}]\n\nThis is a simulated argument in favor of the topic: \"{request.topic}\"\n\nKey points:\n1. Evidence supporting this position\n2. Historical precedents\n3. Logical reasoning",
-                        timestamp=datetime.now().isoformat()
-                    )
-                    debate.pro_arguments.append(arg)
-                    debate.current_argument = arg.content
-                    
-                    if queue:
-                        await queue.put({
-                            "debate_id": debate_id,
-                            "status": debate.status,
-                            "step": step_name,
-                            "round": round_num,
-                            "progress": debate.progress,
-                            "message": f"Pro argument generated",
-                            "argument": {"side": "pro", "content": arg.content}
-                        })
-                
-                elif step_id == "con-argument":
-                    await asyncio.sleep(1.5)
-                    arg = DebateArgument(
-                        side="con",
-                        round=round_num,
-                        content=f"[Simulated Con Argument - Round {round_num}]\n\nThis is a simulated argument against the topic: \"{request.topic}\"\n\nCounter-points:\n1. Alternative evidence\n2. Potential drawbacks\n3. Opposing perspective",
-                        timestamp=datetime.now().isoformat()
-                    )
-                    debate.con_arguments.append(arg)
-                    debate.current_argument = arg.content
-                    
-                    if queue:
-                        await queue.put({
-                            "debate_id": debate_id,
-                            "status": debate.status,
-                            "step": step_name,
-                            "round": round_num,
-                            "progress": debate.progress,
-                            "message": f"Con argument generated",
-                            "argument": {"side": "con", "content": arg.content}
-                        })
-                
-                else:
-                    await asyncio.sleep(0.8)
         
-        # Complete the debate
-        import random
-        winner = random.choice(["pro", "con"])
+        for i, con_arg in enumerate(result.con_arguments):
+            arg = DebateArgument(
+                side="con",
+                round=i + 1,
+                content=con_arg,
+                timestamp=datetime.now().isoformat()
+            )
+            if arg not in debate.con_arguments:
+                debate.con_arguments.append(arg)
+                if queue:
+                    await queue.put({
+                        "debate_id": debate_id,
+                        "status": "running",
+                        "step": "Con Argument",
+                        "round": i + 1,
+                        "progress": 50 + (i * 30 / max(1, len(result.con_arguments))),
+                        "message": f"Con argument round {i+1}",
+                        "argument": {"side": "con", "content": con_arg},
+                    })
+        
+        # Update final status
         debate.status = "completed"
         debate.end_time = datetime.now().isoformat()
         debate.progress = 100
         debate.current_step = "Completed"
         debate.judge_score = JudgeScore(
-            winner=winner,
-            pro_score=random.randint(70, 95),
-            con_score=random.randint(70, 95),
-            reasoning="Based on the quality and coherence of arguments presented, logical consistency, evidence cited, and overall persuasiveness...",
+            winner=result.judge_score.winner,
+            pro_score=result.judge_score.pro_score,
+            con_score=result.judge_score.con_score,
+            reasoning=result.judge_score.reasoning,
             fact_check_passed=True
         )
         
-        # Notify completion
+        # Send completion
         if queue:
             await queue.put({
                 "debate_id": debate_id,
@@ -291,98 +331,29 @@ async def run_simulated_debate(debate_id: str, request: DebateRequest):
                 "step": "Completed",
                 "round": request.rounds,
                 "progress": 100,
-                "message": "Debate completed!",
+                "message": f"Debate completed! Winner: {result.judge_score.winner.upper()}",
             })
         
-        # Save result
         save_debate_result(debate)
+        print(f"\n{'='*60}")
+        print(f"DEBATE COMPLETE: {debate_id}")
+        print(f"{'='*60}\n")
         
     except Exception as e:
+        import traceback
+        print(f"\n[ERROR] Debate failed: {e}")
+        traceback.print_exc()
+        
         debate.status = "error"
         debate.error = str(e)
         if queue:
             await queue.put({
                 "debate_id": debate_id,
                 "status": "error",
-                "message": str(e),
-            })
-
-
-async def run_crewai_debate(debate_id: str, request: DebateRequest):
-    """Run an actual debate using CrewAI."""
-    debate = debates.get(debate_id)
-    if not debate:
-        return
-    
-    queue = debate_progress_queues.get(debate_id)
-    
-    try:
-        # Update status to running
-        debate.status = "running"
-        
-        # Initialize CrewAI debate crew
-        crew = DebateCrew(
-            topic=request.topic,
-            rounds=request.rounds,
-            use_internet=request.use_internet,
-        )
-        
-        # Run the debate with progress callbacks
-        def on_progress(step: str, round_num: int, message: str, argument: dict = None):
-            debate.current_step = step
-            debate.current_round = round_num
-            
-            if argument:
-                arg = DebateArgument(
-                    side=argument["side"],
-                    round=round_num,
-                    content=argument["content"],
-                    timestamp=datetime.now().isoformat()
-                )
-                if argument["side"] == "pro":
-                    debate.pro_arguments.append(arg)
-                else:
-                    debate.con_arguments.append(arg)
-                debate.current_argument = arg.content
-            
-            if queue:
-                asyncio.create_task(queue.put({
-                    "debate_id": debate_id,
-                    "status": debate.status,
-                    "step": step,
-                    "round": round_num,
-                    "progress": debate.progress,
-                    "message": message,
-                    "argument": argument,
-                }))
-        
-        result = await crew.run(on_progress=on_progress)
-        
-        # Update with results
-        debate.status = "completed"
-        debate.end_time = datetime.now().isoformat()
-        debate.progress = 100
-        debate.current_step = "Completed"
-        
-        if result.get("judge"):
-            debate.judge_score = JudgeScore(
-                winner=result["judge"].get("winner", "tie"),
-                pro_score=result["judge"].get("pro_score", 75),
-                con_score=result["judge"].get("con_score", 75),
-                reasoning=result["judge"].get("reasoning", ""),
-                fact_check_passed=result["judge"].get("fact_check_passed", True)
-            )
-        
-        save_debate_result(debate)
-        
-    except Exception as e:
-        debate.status = "error"
-        debate.error = str(e)
-        if queue:
-            await queue.put({
-                "debate_id": debate_id,
-                "status": "error",
-                "message": str(e),
+                "step": "Error",
+                "round": 0,
+                "progress": 0,
+                "message": f"Error: {str(e)}",
             })
 
 
@@ -428,15 +399,80 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint."""
     return {
-        "status": "healthy",
+        "status": "healthy" if CREWAI_AVAILABLE else "degraded",
         "crewai_available": CREWAI_AVAILABLE,
+        "crewai_error": CREWAI_ERROR,
         "debates_count": len(debates),
     }
 
 
+@app.get("/api/crewai/status")
+async def crewai_status():
+    """Get detailed CrewAI status information."""
+    status = {
+        "available": CREWAI_AVAILABLE,
+        "error": CREWAI_ERROR,
+        "packages": {},
+        "gpu": None,
+        "venv_active": os.environ.get("VIRTUAL_ENV") is not None,
+        "python_version": sys.version,
+    }
+    
+    # Check package versions
+    try:
+        import pkg_resources
+        packages_to_check = [
+            "crewai", "openai", "pydantic", "transformers", 
+            "torch", "peft", "tokenizers"
+        ]
+        for pkg in packages_to_check:
+            try:
+                version = pkg_resources.get_distribution(pkg).version
+                status["packages"][pkg] = {"installed": True, "version": version}
+            except pkg_resources.DistributionNotFound:
+                status["packages"][pkg] = {"installed": False, "version": None}
+    except Exception as e:
+        status["packages_error"] = str(e)
+    
+    # Check GPU status
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free", 
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(", ")
+            if len(parts) >= 4:
+                status["gpu"] = {
+                    "name": parts[0],
+                    "memory_total_mb": int(float(parts[1])),
+                    "memory_used_mb": int(float(parts[2])),
+                    "memory_free_mb": int(float(parts[3])),
+                }
+    except Exception:
+        status["gpu"] = None
+    
+    # Check if vLLM server is running (could cause conflicts)
+    try:
+        import requests
+        resp = requests.get("http://localhost:8000/health", timeout=1)
+        status["vllm_server_running"] = resp.status_code == 200
+    except Exception:
+        status["vllm_server_running"] = False
+    
+    return status
+
+
 @app.post("/api/debates", response_model=DebateResponse)
 async def create_debate(request: DebateRequest, background_tasks: BackgroundTasks):
-    """Create and start a new debate."""
+    """Create and start a new debate using CrewAI."""
+    if not CREWAI_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"CrewAI is not available: {CREWAI_ERROR}. Please check the server logs."
+        )
+    
     debate_id = f"debate-{uuid.uuid4().hex[:12]}"
     
     # Determine domain
@@ -454,11 +490,8 @@ async def create_debate(request: DebateRequest, background_tasks: BackgroundTask
     debates[debate_id] = debate
     debate_progress_queues[debate_id] = asyncio.Queue()
     
-    # Start debate in background
-    if CREWAI_AVAILABLE:
-        background_tasks.add_task(run_crewai_debate, debate_id, request)
-    else:
-        background_tasks.add_task(run_simulated_debate, debate_id, request)
+    # Start CrewAI debate in background
+    background_tasks.add_task(run_crewai_debate, debate_id, request)
     
     return DebateResponse(
         id=debate_id,
@@ -588,12 +621,13 @@ if __name__ == "__main__":
     print(f"CrewAI Available: {CREWAI_AVAILABLE}")
     print(f"Project Root: {PROJECT_ROOT}")
     print(f"Runs Directory: {RUNS_DIR}")
+    print(f"Server Port: 5040")
     print("=" * 60)
     
     uvicorn.run(
         "run_xp_server:app",
         host="0.0.0.0",
-        port=8001,
+        port=5040,
         reload=True,
         reload_dirs=[str(PROJECT_ROOT / "scripts")],
     )

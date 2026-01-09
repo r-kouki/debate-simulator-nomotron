@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useWindowStore, useDebateStore, useUIStore } from '@/stores';
 import { DebateConfig } from '@/types';
+import { debateApi } from '@/api/debateApi';
 
 interface DebateCreatorWindowProps {
   windowId: string;
@@ -37,17 +38,22 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
     setIsSubmitting(true);
 
     try {
-      // Create a new debate session
-      const debateId = `debate-${Date.now()}`;
+      // Always require backend API - no simulation mode
+      console.log('[CrewAI] Creating debate via backend API...');
+      const response = await debateApi.createDebate(config);
+      const debateId = response.id;
+      console.log('[CrewAI] Backend debate created:', response);
+      
+      // Create local state for the debate
       const debate = {
         id: debateId,
         topic: config.topic,
         domain: config.domain || 'general',
         rounds: config.rounds,
-        status: 'pending' as const,
+        status: 'pending' as const,  // Use 'pending' - backend will update to 'running'
         startTime: new Date().toISOString(),
         currentRound: 0,
-        currentStep: 'Initializing...',
+        currentStep: 'Connecting to CrewAI...',
         progress: 0,
         proArguments: [],
         conArguments: [],
@@ -60,22 +66,31 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
       closeWindow(windowId);
       openWindow({
         id: `debate-viewer-${debateId}`,
-        title: `Debate: ${config.topic.slice(0, 30)}...`,
-        icon: '🎯',
+        title: `🎭 Debate: ${config.topic.slice(0, 30)}...`,
+        icon: '🎭',
         component: 'debate-viewer',
         componentProps: { debateId },
       });
 
       addNotification({
-        title: 'Debate Created',
-        message: `Starting debate on: ${config.topic}`,
+        title: 'Debate Started',
+        message: `CrewAI debate started: ${config.topic}`,
         type: 'success',
       });
     } catch (error) {
+      console.error('[CrewAI] Failed to create debate:', error);
       addNotification({
-        title: 'Error',
-        message: 'Failed to create debate',
+        title: 'CrewAI Error',
+        message: 'Failed to connect to CrewAI backend. Make sure the server is running on port 5040.',
         type: 'error',
+      });
+      
+      // Open the status window so user can check
+      openWindow({
+        id: 'crewai-status-check',
+        title: '🔧 CrewAI Status',
+        icon: '🔧',
+        component: 'crewai-status',
       });
     } finally {
       setIsSubmitting(false);
@@ -158,6 +173,15 @@ export const DebateCreatorWindow: React.FC<DebateCreatorWindowProps> = ({ window
             </label>
           </div>
         </fieldset>
+
+        {/* CrewAI Info */}
+        <div className="bg-blue-50 border border-blue-200 p-3 rounded text-xs">
+          <p className="font-bold text-blue-800 mb-1">🤖 CrewAI Mode</p>
+          <p className="text-blue-600">
+            Debates use CrewAI agents with the local Llama model. 
+            Make sure the backend server is running on port 5040.
+          </p>
+        </div>
 
         {/* Actions */}
         <div className="flex justify-end gap-2 mt-auto pt-4 border-t border-gray-300">

@@ -22,6 +22,7 @@ export interface DebateArgument {
   round: number;
   content: string;
   timestamp: string;
+  isHuman?: boolean;
 }
 
 export interface DebateSession {
@@ -44,6 +45,8 @@ export interface DebateSession {
     transcript: string;
   };
   error?: string;
+  humanMode?: boolean;
+  humanSide?: 'pro' | 'con';
 }
 
 export interface DebateProgress {

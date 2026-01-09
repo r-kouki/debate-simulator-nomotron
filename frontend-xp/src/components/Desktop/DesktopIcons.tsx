@@ -5,7 +5,7 @@ interface DesktopIconData {
   id: string;
   label: string;
   icon: string;
-  component: 'debate-creator' | 'history' | 'settings' | 'my-computer' | 'about';
+  component: 'debate-creator' | 'history' | 'settings' | 'my-computer' | 'about' | 'crewai-status';
   windowTitle: string;
 }
 
@@ -23,6 +23,13 @@ const desktopIcons: DesktopIconData[] = [
     icon: '💬',
     component: 'debate-creator',
     windowTitle: 'New Debate',
+  },
+  {
+    id: 'crewai-status',
+    label: 'CrewAI Status',
+    icon: '🤖',
+    component: 'crewai-status',
+    windowTitle: 'CrewAI System Status',
   },
   {
     id: 'history',
