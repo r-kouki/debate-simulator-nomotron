@@ -1,0 +1,1 @@
+export { DebateCreatorWindow } from './DebateCreatorWindow';

@@ -1,1 +1,6 @@
 source .venv/bin/activate
+cd /home/remote-core/project/debate-simulator-nomotron/frontend-xp && npm run dev &
+[1] 26536
+remote-core@slim-rain-blows-fin-01:~/project/debate-simulator-nomotron$ source .venv/bin/activate
+(.venv) remote-core@slim-rain-blows-fin-01:~/project/debate-simulator-nomotron$ python scripts/run_xp_server.py &
+[1] 26920
