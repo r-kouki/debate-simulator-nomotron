@@ -170,6 +170,14 @@ vllm==0.13.0
 watchfiles==1.1.1
 websockets==15.0.1
 wheel==0.45.1
+wikipedia==1.4.0
 xgrammar==0.1.27
 xxhash==3.6.0
 yarl==1.22.0
+
+# CrewAI dependencies
+# Installed with --no-deps to avoid conflicts with vllm
+# Install: pip install --no-deps crewai==1.8.0 crewai-tools==1.8.0
+# Requires vLLM server running as OpenAI-compatible API (see scripts/start_vllm_server.sh)
+crewai==1.8.0
+crewai-tools==1.8.0

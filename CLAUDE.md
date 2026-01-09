@@ -21,8 +21,11 @@ python scripts/generate_education_dataset.py  # Generate domain dataset
 python scripts/train_education_adapter.py     # Train QLoRA adapter
 python scripts/evaluate_education_adapter.py  # Evaluate adapter vs base
 
-# Run multi-agent debate (CLI)
+# Run multi-agent debate (original system)
 python scripts/run_debate.py "Your debate topic here" --rounds 2
+
+# Run CrewAI-based debate (standalone mode - recommended!)
+python scripts/run_debate_crew.py "Your debate topic here" --rounds 2
 
 # Generate academic report with plots
 python scripts/generate_academic_report.py
@@ -188,3 +191,47 @@ cd frontend/apps/api && npm run test   # Requires prisma:migrate first
 - ~6GB VRAM for inference, ~10GB for training
 - Base model at `models/base/llama3.1-nemotron-nano-8b-v1/`
 - Node 18+ for frontend
+
+## CrewAI Integration
+
+The project includes a CrewAI-based debate system (`src/crew/`) that runs alongside the original multi-agent system (`src/agents/`).
+
+**Status:** ✅ **Fully functional in standalone mode!**
+
+### Quick Start
+
+```bash
+# Single command - no server needed!
+python scripts/run_debate_crew.py "Your debate topic" --rounds 2
+```
+
+### Features
+
+- **Dual Model System:** Loads two independent model instances (Pro and Con debaters)
+- **Dynamic Adapters:** Automatically loads domain-specific adapters (education, technology, etc.)
+- **Fast:** Complete debates in ~50 seconds
+- **Simple:** No server configuration required
+
+### Dependency Resolution
+
+CrewAI 1.8.0 was installed with `--no-deps` to avoid conflicts with vLLM 0.13.0:
+
+```bash
+# Already done in requirements.txt
+pip install --no-deps crewai==1.8.0 crewai-tools==1.8.0
+```
+
+This works because your existing package versions (openai 2.14.0, pydantic 2.12.5, tokenizers 0.22.1) are compatible with both.
+
+### Test Results
+
+See [test_outputs/STANDALONE_TEST_SUMMARY.md](test_outputs/STANDALONE_TEST_SUMMARY.md) for complete test report.
+
+**Tested successfully:**
+- ✅ Model loading (2 instances, ~11.5 GB VRAM)
+- ✅ Domain adapter loading (education adapter tested)
+- ✅ Debate generation (quality arguments)
+- ✅ Fact-checking and judging
+- ✅ Artifact saving (JSON + transcript)
+
+**Performance:** 52 seconds for complete debate with 1 round
