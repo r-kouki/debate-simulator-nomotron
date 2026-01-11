@@ -45,6 +45,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
     bio: string;
     sourceUrl: string;
   }>>([]);
+  const [hostIntroduction, setHostIntroduction] = useState<string>('');
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -207,6 +208,14 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
             addLog(`[CrewAI] ${data.message}`, 'info');
             break;
 
+          case 'host_intro':
+            // TV Host introduction
+            addLog('TV Host introduction received', 'success');
+            if (data.introduction) {
+              setHostIntroduction(data.introduction);
+            }
+            break;
+
           case 'waiting_for_human':
             addLog(`Your turn! ${data.message}`, 'success');
             setIsWaitingForHuman(true);
@@ -357,13 +366,46 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
           </div>
 
           <div className="arguments-container">
-            {Object.keys(argumentsByRound).length === 0 ? (
+            {/* TV Host Introduction */}
+            {hostIntroduction && (
+              <div className="host-introduction" style={{
+                backgroundColor: '#1a1a2e',
+                border: '2px solid #ffd700',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '16px',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '12px',
+                  color: '#ffd700',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                }}>
+                  🎙️ TV Host Introduction
+                </div>
+                <div style={{
+                  color: '#e0e0e0',
+                  fontSize: '13px',
+                  lineHeight: '1.6',
+                  whiteSpace: 'pre-line',
+                }}>
+                  {hostIntroduction}
+                </div>
+              </div>
+            )}
+
+            {Object.keys(argumentsByRound).length === 0 && !hostIntroduction && (
               <div className="waiting-for-arguments">
                 <div className="spinner"></div>
                 <p>Waiting for CrewAI arguments...</p>
                 <p className="hint">Make sure the backend server is running on port 5040</p>
               </div>
-            ) : (
+            )}
+
+            {Object.keys(argumentsByRound).length > 0 && (
               Object.entries(argumentsByRound).map(([round, args]) => (
                 <div key={round} className="round-section">
                   <div className="round-header">Round {round}</div>
@@ -421,7 +463,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
                     <div style={{ fontSize: '11px', color: '#666' }}>{guest.credentials}</div>
                     {guest.stance && (
                       <div style={{ fontSize: '11px', marginTop: '4px' }}>
-                        <span style={{ 
+                        <span style={{
                           backgroundColor: guest.stance.toLowerCase().includes('pro') ? '#d4edda' : '#f8d7da',
                           padding: '2px 6px',
                           borderRadius: '3px',

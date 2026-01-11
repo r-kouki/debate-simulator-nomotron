@@ -362,7 +362,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
                         progress=progress,
                         message=message,
                         argument=data if event_type == "argument" else None,
-                        extra=data if event_type != "argument" else None
+                        extra=data if event_type not in ("argument",) else None
                     ),
                     loop
                 )
