@@ -171,14 +171,53 @@ class WebSearcher:
         Returns:
             ResearchData with arguments from both sides
         """
-        pro_results = self.search_sync(f"{topic} benefits advantages pros arguments", 3)
-        con_results = self.search_sync(f"{topic} problems disadvantages cons arguments", 3)
-        fact_results = self.search_sync(f"{topic} facts statistics research data", 3)
+        from datetime import datetime
+        current_year = datetime.now().year
         
-        # Extract key information from snippets
-        pro_arguments = [r.snippet for r in pro_results if r.snippet]
-        con_arguments = [r.snippet for r in con_results if r.snippet]
-        facts = [r.snippet for r in fact_results if r.snippet]
+        # More specific, targeted queries for better research quality
+        pro_queries = [
+            f'"{topic}" benefits evidence {current_year}',
+            f'"{topic}" arguments in favor expert opinion',
+            f'why {topic} positive impact research',
+        ]
+        con_queries = [
+            f'"{topic}" problems criticism {current_year}',
+            f'"{topic}" arguments against concerns',
+            f'why {topic} negative consequences research',
+        ]
+        fact_queries = [
+            f'"{topic}" statistics data research {current_year}',
+            f'"{topic}" study findings academic',
+            f'{topic} facts numbers analysis report',
+        ]
+        
+        # Gather results from multiple queries for diversity
+        pro_results = []
+        for q in pro_queries[:2]:
+            pro_results.extend(self.search_sync(q, 3))
+        
+        con_results = []
+        for q in con_queries[:2]:
+            con_results.extend(self.search_sync(q, 3))
+        
+        fact_results = []
+        for q in fact_queries[:2]:
+            fact_results.extend(self.search_sync(q, 3))
+        
+        # Extract key information from snippets, dedup by content
+        seen_snippets = set()
+        
+        def dedup_snippets(results):
+            unique = []
+            for r in results:
+                if r.snippet and r.snippet[:50] not in seen_snippets:
+                    seen_snippets.add(r.snippet[:50])
+                    unique.append(r.snippet)
+            return unique
+        
+        pro_arguments = dedup_snippets(pro_results)
+        con_arguments = dedup_snippets(con_results)
+        facts = dedup_snippets(fact_results)
         
         # Collect unique sources
         all_results = pro_results + con_results + fact_results

@@ -106,7 +106,7 @@ class InternetResearchTool(BaseTool):
         # Perform search
         try:
             if search_type == "debate":
-                results = self._search_debate(topic)
+                results = self._search_debate_with_refinement(topic)
             elif search_type == "experts":
                 results = self._search_experts(topic)
             else:
@@ -119,6 +119,51 @@ class InternetResearchTool(BaseTool):
             
         except Exception as e:
             return f"Research failed: {str(e)}. Proceeding without internet data."
+    
+    def _search_debate_with_refinement(self, topic: str, max_retries: int = 5) -> dict:
+        """
+        Search for debate content with auto-refinement loop.
+        
+        If research quality is below threshold, refines queries and retries
+        up to max_retries times.
+        """
+        from src.crew.tools.research_evaluator import evaluate_research_quality
+        
+        best_results = None
+        best_score = 0
+        
+        for attempt in range(max_retries):
+            # Get research results
+            results = self._search_debate(topic)
+            
+            # Convert to text for evaluation
+            research_text = self._results_to_text(results)
+            
+            # Evaluate quality
+            evaluation = evaluate_research_quality(research_text, topic, threshold=60)
+            
+            print(f"  [Research Attempt {attempt + 1}/{max_retries}] Score: {evaluation.score}/100")
+            
+            # Track best results
+            if evaluation.score > best_score:
+                best_score = evaluation.score
+                best_results = results
+            
+            # If acceptable, we're done
+            if evaluation.is_acceptable:
+                print(f"  ✓ Research quality acceptable ({evaluation.score}/100)")
+                return results
+            
+            # If we have more attempts, try refined queries
+            if attempt < max_retries - 1 and evaluation.refined_queries:
+                print(f"  → Refining search: {evaluation.issues[:2]}")
+                # Use refined query for next topic search
+                refined_query = evaluation.refined_queries[attempt % len(evaluation.refined_queries)]
+                topic = refined_query  # Use refined query as new search topic
+        
+        # Return best results found
+        print(f"  → Using best results (score: {best_score}/100)")
+        return best_results
     
     def _search_debate(self, topic: str) -> dict:
         """Search for debate-focused content (pro/con/facts)."""
@@ -181,6 +226,26 @@ class InternetResearchTool(BaseTool):
             "snippet": result.snippet,
             "content": result.content[:500] if result.content else "",
         }
+    
+    def _results_to_text(self, results: dict) -> str:
+        """Convert research results dict to plain text for evaluation."""
+        if not results:
+            return ""
+        
+        parts = [f"Topic: {results.get('topic', '')}"]
+        
+        if results.get("type") == "debate":
+            for r in results.get("pro_arguments", []):
+                parts.append(r.get("snippet", ""))
+            for r in results.get("con_arguments", []):
+                parts.append(r.get("snippet", ""))
+            for r in results.get("facts", []):
+                parts.append(r.get("snippet", ""))
+        else:
+            for r in results.get("results", []):
+                parts.append(r.get("snippet", ""))
+        
+        return " ".join(parts)
     
     def _format_results(self, results: dict, from_cache: bool) -> str:
         """Format results as a readable string."""

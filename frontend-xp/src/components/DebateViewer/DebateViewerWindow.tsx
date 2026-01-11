@@ -38,6 +38,13 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
   const [expectedSide, setExpectedSide] = useState<'pro' | 'con' | null>(null);
   const [currentRoundNum, setCurrentRoundNum] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recommendedGuests, setRecommendedGuests] = useState<Array<{
+    name: string;
+    credentials: string;
+    stance: string;
+    bio: string;
+    sourceUrl: string;
+  }>>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -176,6 +183,11 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
               status: 'completed',
               judgeScore: data.judgeScore,
             });
+            // Store recommended guests if present
+            if (data.recommendedGuests && data.recommendedGuests.length > 0) {
+              setRecommendedGuests(data.recommendedGuests);
+              addLog(`Found ${data.recommendedGuests.length} recommended debate guests`, 'info');
+            }
             eventSource.close();
             setConnectionStatus('idle');
             break;
@@ -381,6 +393,45 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
                 <div className="scores">
                   Pro: {judgeScore.proScore} | Con: {judgeScore.conScore}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recommended Guests Display */}
+          {recommendedGuests.length > 0 && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              backgroundColor: '#f8f9fa',
+              border: '1px solid #dee2e6',
+              borderRadius: '8px',
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                👥 Recommended Debate Guests
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {recommendedGuests.map((guest, idx) => (
+                  <div key={idx} style={{
+                    padding: '8px',
+                    backgroundColor: 'white',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                  }}>
+                    <div style={{ fontWeight: 'bold', color: '#333' }}>{guest.name}</div>
+                    <div style={{ fontSize: '11px', color: '#666' }}>{guest.credentials}</div>
+                    {guest.stance && (
+                      <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                        <span style={{ 
+                          backgroundColor: guest.stance.toLowerCase().includes('pro') ? '#d4edda' : '#f8d7da',
+                          padding: '2px 6px',
+                          borderRadius: '3px',
+                        }}>
+                          Likely stance: {guest.stance}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

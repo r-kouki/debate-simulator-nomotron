@@ -76,6 +76,12 @@ def recommend_debate_guests(
     """
     Recommend real-world debate guests for a topic.
     
+    Uses a multi-pronged search strategy:
+    1. Search for specific expert types (economists, professors, analysts)
+    2. Search for people associated with the topic
+    3. Cross-reference with web search for recent commentary
+    4. Filter to ensure only real people are returned
+    
     Args:
         topic: The debate topic
         domain: Domain category
@@ -87,33 +93,138 @@ def recommend_debate_guests(
         List of DebateGuest recommendations
     """
     guests = []
+    seen_names = set()
     
-    # Search Wikipedia for experts
-    wiki_people = wikipedia_tool.search_experts_for_debate(topic)
+    # Extract key topic words for more targeted search
+    topic_words = [w for w in topic.lower().split() if len(w) > 3]
+    main_subject = " ".join(topic_words[:2]) if topic_words else topic
     
-    for person in wiki_people[:num_guests]:
-        # Try to infer stance from bio
-        stance = _infer_stance(person.bio, topic)
-        
-        guests.append(DebateGuest(
-            name=person.name,
-            credentials=_extract_credentials(person.bio),
-            known_stance=stance,
-            bio=person.bio,
-            source_url=person.url,
-        ))
+    # Domain-specific expert types
+    expert_types = {
+        "economics": ["economist", "professor of economics", "financial analyst"],
+        "medicine": ["doctor", "medical researcher", "professor of medicine"],
+        "education": ["education researcher", "professor of education", "teacher"],
+        "ecology": ["environmental scientist", "climate researcher", "ecologist"],
+        "politics": ["political scientist", "policy analyst", "politician"],
+        "technology": ["tech researcher", "computer scientist", "AI researcher"],
+        "debate": ["analyst", "professor", "researcher", "commentator"],
+    }
     
-    # Supplement with internet search if we need more guests
+    expert_roles = expert_types.get(domain.lower(), expert_types["debate"])
+    
+    # Strategy 1: Search for specific expert types related to topic
+    for role in expert_roles[:2]:
+        search_query = f"{main_subject} {role}"
+        try:
+            wiki_people = wikipedia_tool.search_experts_for_debate(search_query)
+            for person in wiki_people:
+                if person.name not in seen_names and _is_real_person(person.bio):
+                    seen_names.add(person.name)
+                    guests.append(DebateGuest(
+                        name=person.name,
+                        credentials=_extract_credentials(person.bio),
+                        known_stance=_infer_stance(person.bio, topic),
+                        bio=person.bio,
+                        source_url=person.url,
+                    ))
+                    if len(guests) >= num_guests:
+                        return guests
+        except Exception as e:
+            print(f"  ⚠ Expert search failed for {role}: {e}")
+    
+    # Strategy 2: Search for people directly named in topic context
+    name_queries = [
+        f"who is expert on {topic}",
+        f"{topic} notable figure scholar",
+        f"famous {main_subject} researcher professor",
+    ]
+    
+    for query in name_queries:
+        if len(guests) >= num_guests:
+            break
+        try:
+            wiki_people = wikipedia_tool.search_experts_for_debate(query)
+            for person in wiki_people:
+                if person.name not in seen_names and _is_real_person(person.bio):
+                    seen_names.add(person.name)
+                    guests.append(DebateGuest(
+                        name=person.name,
+                        credentials=_extract_credentials(person.bio),
+                        known_stance=_infer_stance(person.bio, topic),
+                        bio=person.bio,
+                        source_url=person.url,
+                    ))
+                    if len(guests) >= num_guests:
+                        break
+        except Exception:
+            continue
+    
+    # Strategy 3: Supplement with internet search for recent experts
     if len(guests) < num_guests and internet_tool and internet_tool.use_internet:
         try:
-            # Search for additional experts
             expert_results = internet_tool._run(topic, search_type="experts")
-            # Parse results and add to guests (simplified)
-            # In practice, you'd parse the formatted string or access raw results
+            # Parse looking for names (simple heuristic: capitalized words)
+            import re
+            potential_names = re.findall(r'([A-Z][a-z]+ [A-Z][a-z]+)', expert_results)
+            for name in potential_names[:3]:
+                if name not in seen_names and len(name) > 5:
+                    try:
+                        wiki_check = wikipedia_tool._run(name, search_type="summary", sentences=2)
+                        if "born" in wiki_check.lower() or "is a" in wiki_check.lower():
+                            seen_names.add(name)
+                            guests.append(DebateGuest(
+                                name=name,
+                                credentials=_extract_credentials(wiki_check),
+                                known_stance="unknown",
+                                bio=wiki_check[:200],
+                                source_url=f"https://en.wikipedia.org/wiki/{name.replace(' ', '_')}",
+                            ))
+                            if len(guests) >= num_guests:
+                                break
+                    except Exception:
+                        continue
         except Exception:
-            pass  # Continue with Wikipedia results only
+            pass
     
     return guests[:num_guests]
+
+
+def _is_real_person(bio: str) -> bool:
+    """
+    Check if a bio describes a real person (not an event, concept, or organization).
+    
+    Looks for birth indicators, occupations, and personal pronouns.
+    """
+    if not bio or len(bio) < 50:
+        return False
+    
+    bio_lower = bio.lower()
+    
+    # Strong indicators it's a person
+    person_indicators = [
+        "born", "was born", "is a ", "is an ",
+        "professor", "economist", "scientist", "researcher",
+        "journalist", "author", "politician", "activist",
+        "he was", "she was", "he is", "she is",
+        "his career", "her career", "graduated",
+    ]
+    
+    # Strong indicators it's NOT a person (it's an event, concept, or article)
+    not_person_indicators = [
+        "is the name of", "refers to", "was an event",
+        "is a policy", "is a term", "was a period",
+        "presidency of", "administration of", "government of",
+        "is a company", "is an organization",
+    ]
+    
+    # Check for disqualifying patterns first
+    for indicator in not_person_indicators:
+        if indicator in bio_lower:
+            return False
+    
+    # Check for person indicators
+    person_score = sum(1 for ind in person_indicators if ind in bio_lower)
+    return person_score >= 2
 
 
 def _infer_stance(bio: str, topic: str) -> str:

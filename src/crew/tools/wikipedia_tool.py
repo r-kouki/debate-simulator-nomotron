@@ -221,17 +221,52 @@ class WikipediaSearchTool(BaseTool):
         }
     
     def _is_likely_person(self, page) -> bool:
-        """Check if a Wikipedia page is likely about a person."""
-        person_indicators = [
-            "birth", "born", "death", "died",
-            "biograph", "career", "occupation",
-            "living people", "alumni",
+        """
+        Check if a Wikipedia page is likely about a person.
+        
+        Uses strict criteria:
+        - Must have "Living people" category OR birth year in categories
+        - Must have occupation-related content
+        - Must NOT be an event, policy, organization, or concept
+        """
+        categories_text = " ".join(page.categories).lower()
+        content_start = page.content[:800].lower()
+        
+        # STRONG person indicators (need at least one)
+        strong_person_indicators = [
+            "living people" in categories_text,
+            "births" in categories_text,  # "1950 births", "1980 births", etc.
+            "deaths" in categories_text,
+            "alumni" in categories_text,
         ]
         
-        categories_lower = " ".join(page.categories).lower()
-        content_start = page.content[:500].lower()
+        # If no strong indicator, this is likely not a person
+        if not any(strong_person_indicators):
+            return False
         
-        return any(ind in categories_lower or ind in content_start for ind in person_indicators)
+        # Occupation indicators in content (should have at least one)
+        occupation_indicators = [
+            "is a ", "is an ", "was a ", "was an ",
+            "born", "economist", "professor", "scientist",
+            "researcher", "journalist", "author", "politician",
+            "activist", "director", "analyst", "expert",
+        ]
+        has_occupation = any(ind in content_start for ind in occupation_indicators)
+        
+        # DISQUALIFYING patterns - these indicate it's NOT a person
+        disqualifying_patterns = [
+            "presidency of", "administration of", "government of",
+            "is a term", "is a concept", "refers to",
+            "was an event", "is a policy", "is a company",
+            "is an organization", "is a political party",
+            "is a movement", "was a war", "is a treaty",
+        ]
+        
+        for pattern in disqualifying_patterns:
+            if pattern in content_start:
+                return False
+        
+        return has_occupation
     
     def _handle_disambiguation(self, query: str, options: list) -> str:
         """Handle disambiguation pages."""

@@ -1,6 +1,43 @@
+# ===== Debate Simulator XP - Startup Commands =====
+
+# Step 1: Activate virtual environment (run from project root)
+cd /home/remote-core/project/debate-simulator-nomotron
 source .venv/bin/activate
+
+# Step 2: Start Backend API (port 5040)
+python scripts/run_xp_server.py
+
+# Step 3: Start Frontend (in a new terminal, port 4040)
+cd /home/remote-core/project/debate-simulator-nomotron/frontend-xp
+npm run dev
+
+# ===== One-liner commands =====
+
+# Backend (run in background):
+cd /home/remote-core/project/debate-simulator-nomotron && source .venv/bin/activate && python scripts/run_xp_server.py &
+
+# Frontend (run in background):
 cd /home/remote-core/project/debate-simulator-nomotron/frontend-xp && npm run dev &
-[1] 26536
-remote-core@slim-rain-blows-fin-01:~/project/debate-simulator-nomotron$ source .venv/bin/activate
-(.venv) remote-core@slim-rain-blows-fin-01:~/project/debate-simulator-nomotron$ python scripts/run_xp_server.py &
-[1] 26920
+
+# ===== URLs =====
+# Backend API: http://localhost:5040
+# Frontend UI: http://localhost:4040
+
+# ===== KILL COMMANDS (if already running) =====
+
+# Kill Backend (port 5040):
+kill $(lsof -t -i:5040)
+
+# Kill Frontend (port 4040):
+kill $(lsof -t -i:4040)
+
+# Kill both at once:
+kill $(lsof -t -i:5040) $(lsof -t -i:4040)
+
+# Force kill if they won't stop:
+kill -9 $(lsof -t -i:5040)
+kill -9 $(lsof -t -i:4040)
+
+# Check what's running on those ports:
+lsof -i :5040
+lsof -i :4040

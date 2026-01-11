@@ -28,6 +28,9 @@ from src.crew.agents.debater_agents import create_pro_debater_agent, create_con_
 from src.crew.agents.factcheck_agent import create_factcheck_agent, compute_faithfulness_score
 from src.crew.agents.judge_agent import create_judge_agent, judge_debate, JudgeScore
 from src.crew.agents.persona_agent import create_persona_agent, recommend_debate_guests, DebateGuest
+from src.crew.agents.topic_analyst import analyze_topic, TopicAnalysis
+from src.crew.agents.research_analyst import analyze_research, format_for_debater, ClassifiedResearch
+from src.crew.agents.tv_host_agent import generate_tv_host_introduction, DebateIntroduction
 
 
 @dataclass
@@ -39,6 +42,7 @@ class DebateResult:
     pro_arguments: list[str] = field(default_factory=list)
     con_arguments: list[str] = field(default_factory=list)
     research_context: str = ""
+    host_introduction: str = ""
     fact_check: dict = field(default_factory=dict)
     judge_score: Optional[JudgeScore] = None
     recommended_guests: list[DebateGuest] = field(default_factory=list)
@@ -156,33 +160,81 @@ class DebateCrew:
         self.internet_tool.clear_cache()
         self.wikipedia_tool.clear_cache()
         
-        # Step 1: Route domain
+        # Step 1: Topic Analysis (grammar correction, query generation)
         if self.verbose:
-            print("[1/6] Routing domain...")
+            print("[1/7] Analyzing topic...")
         if progress_callback:
-            progress_callback("log", "Routing Domain", 0, 5, "Classifying topic domain...", {})
-
-        domain, confidence = classify_domain(topic)
-        if self.verbose:
-            print(f"  → Domain: {domain} (confidence: {confidence:.2f})")
-        if progress_callback:
-            progress_callback("log", "Domain Routed", 0, 10, f"Domain: {domain}", {"domain": domain})
+            progress_callback("log", "Analyzing Topic", 0, 5, "Correcting grammar and generating queries...", {})
         
-        # Step 2: Research
+        topic_analysis = analyze_topic(topic)
+        corrected_topic = topic_analysis.corrected_topic
+        domain = topic_analysis.domain_hint
+        
         if self.verbose:
-            print("[2/6] Gathering research...")
+            if topic != corrected_topic:
+                print(f"  → Corrected: '{topic}' → '{corrected_topic}'")
+            print(f"  → Domain: {domain}")
+            print(f"  → Key terms: {topic_analysis.key_terms}")
+        if progress_callback:
+            progress_callback("log", "Topic Analyzed", 0, 10, f"Topic: {corrected_topic}", {"domain": domain})
+        
+        # Step 2: Research with optimized queries
+        if self.verbose:
+            print("[2/7] Gathering research...")
         if progress_callback:
             progress_callback("log", "Researching", 0, 15, "Gathering background research...", {})
 
-        research_context = self._gather_research(topic)
+        # Use topic analyst's optimized queries
+        research_context = self._gather_research_with_queries(
+            corrected_topic, 
+            topic_analysis.research_queries
+        )
         if self.verbose:
             print(f"  → Research gathered ({len(research_context)} chars)")
         if progress_callback:
             progress_callback("log", "Research Complete", 0, 20, f"Research gathered ({len(research_context)} chars)", {})
         
-        # Step 3: Debate rounds
+        # Step 3: Classify research into PRO/CON
         if self.verbose:
-            print(f"[3/6] Running {num_rounds} debate rounds...")
+            print("[3/8] Classifying research...")
+        if progress_callback:
+            progress_callback("log", "Classifying Research", 0, 25, "Sorting arguments into PRO/CON...", {})
+        
+        classified_research = analyze_research(research_context, corrected_topic)
+        pro_context = format_for_debater(classified_research, "pro")
+        con_context = format_for_debater(classified_research, "con")
+        
+        if self.verbose:
+            print(f"  → PRO points: {len(classified_research.pro_points)}")
+            print(f"  → CON points: {len(classified_research.con_points)}")
+            print(f"  → Quality score: {classified_research.quality_score}/100")
+        if progress_callback:
+            progress_callback("log", "Research Classified", 0, 30, f"Quality: {classified_research.quality_score}/100", {})
+        
+        # Step 4: TV Host Introduction
+        if self.verbose:
+            print("[4/8] Generating TV host introduction...")
+        if progress_callback:
+            progress_callback("log", "TV Host", 0, 35, "Host introducing the debate...", {})
+        
+        host_intro = generate_tv_host_introduction(
+            topic=corrected_topic,
+            domain=domain,
+            research_summary=research_context[:500] if research_context else "",
+            num_rounds=num_rounds,
+            model_manager=self.model_manager,
+        )
+        
+        if self.verbose:
+            print(f"  → Introduction generated ({len(host_intro.full_introduction)} chars)")
+        if progress_callback:
+            progress_callback("host_intro", "TV Host Introduction", 0, 38,
+                            "Host introduction ready",
+                            {"introduction": host_intro.full_introduction})
+        
+        # Step 5: Debate rounds
+        if self.verbose:
+            print(f"[5/8] Running {num_rounds} debate rounds...")
         
         pro_arguments = []
         con_arguments = []
@@ -191,15 +243,15 @@ class DebateCrew:
             if self.verbose:
                 print(f"  Round {round_num}:")
             
-            # Pro argument
+            # Pro argument (uses pro-optimized research context)
             if progress_callback:
-                progress_callback("log", "Pro Debating", round_num, 20 + (round_num * 25), f"Generating Pro argument for round {round_num}...", {})
+                progress_callback("log", "Pro Debating", round_num, 30 + (round_num * 20), f"Generating Pro argument for round {round_num}...", {})
 
             pro_arg = self._generate_argument(
-                topic=topic,
+                topic=corrected_topic,
                 domain=domain,
                 stance="pro",
-                research_context=research_context,
+                research_context=pro_context,  # Use classified PRO context
                 round_num=round_num,
             )
             pro_arguments.append(pro_arg)
@@ -208,22 +260,22 @@ class DebateCrew:
 
             # Send pro argument immediately via callback
             if progress_callback:
-                progress_callback("argument", "Pro Argument", round_num, 20 + (round_num * 25),
+                progress_callback("argument", "Pro Argument", round_num, 30 + (round_num * 20),
                                 f"Pro argument round {round_num}",
                                 {"side": "pro", "content": pro_arg, "round": round_num})
 
             # Record pro argument in con's history for awareness
             self._debate_tool_con.add_external_turn("pro", pro_arg, round_num)
             
-            # Con argument
+            # Con argument (uses con-optimized research context)
             if progress_callback:
-                progress_callback("log", "Con Debating", round_num, 35 + (round_num * 25), f"Generating Con argument for round {round_num}...", {})
+                progress_callback("log", "Con Debating", round_num, 40 + (round_num * 20), f"Generating Con argument for round {round_num}...", {})
 
             con_arg = self._generate_argument(
-                topic=topic,
+                topic=corrected_topic,
                 domain=domain,
                 stance="con",
-                research_context=research_context,
+                research_context=con_context,  # Use classified CON context
                 round_num=round_num,
             )
             con_arguments.append(con_arg)
@@ -239,9 +291,9 @@ class DebateCrew:
             # Record con argument in pro's history
             self._debate_tool_pro.add_external_turn("con", con_arg, round_num)
         
-        # Step 4: Fact-check
+        # Step 6: Fact-check
         if self.verbose:
-            print("[4/6] Fact-checking arguments...")
+            print("[6/8] Fact-checking arguments...")
         if progress_callback:
             progress_callback("log", "Fact Checking", num_rounds, 70, "Verifying factual accuracy...", {})
 
@@ -254,9 +306,9 @@ class DebateCrew:
         if progress_callback:
             progress_callback("log", "Fact Check Complete", num_rounds, 80, "Fact check complete", {"fact_check": fact_check})
         
-        # Step 5: Judge
+        # Step 7: Judge
         if self.verbose:
-            print("[5/6] Judging debate...")
+            print("[7/8] Judging debate...")
         if progress_callback:
             progress_callback("log", "Judging", num_rounds, 85, "Judge evaluating arguments...", {})
 
@@ -271,13 +323,14 @@ class DebateCrew:
                 "con_score": judge_score.con_score
             })
         
-        # Step 6: Persona recommendations (optional)
+        # Step 8: Persona recommendations (optional)
         recommended_guests = []
         if recommend_guests:
             if self.verbose:
-                print("[6/6] Finding debate guests...")
+                print("[8/8] Finding debate guests...")
+            # Use topic analyst's persona queries for better results
             recommended_guests = recommend_debate_guests(
-                topic=topic,
+                topic=corrected_topic,
                 domain=domain,
                 wikipedia_tool=self.wikipedia_tool,
                 internet_tool=self.internet_tool if self.use_internet else None,
@@ -289,19 +342,20 @@ class DebateCrew:
                     print(f"    - {guest.name} ({guest.credentials})")
         else:
             if self.verbose:
-                print("[6/6] Skipping guest recommendations")
+                print("[8/8] Skipping guest recommendations")
         
         # Calculate duration
         duration = (datetime.now() - start_time).total_seconds()
         
         # Build result
         result = DebateResult(
-            topic=topic,
+            topic=corrected_topic,
             domain=domain,
             rounds=num_rounds,
             pro_arguments=pro_arguments,
             con_arguments=con_arguments,
             research_context=research_context,
+            host_introduction=host_intro.full_introduction,
             fact_check=fact_check,
             judge_score=judge_score,
             recommended_guests=recommended_guests,
@@ -342,6 +396,56 @@ class DebateCrew:
             except Exception as e:
                 if self.verbose:
                     print(f"  ⚠ Internet search failed: {e}")
+        
+        return "\n\n".join(research_parts)
+    
+    def _gather_research_with_queries(self, topic: str, queries: list[str]) -> str:
+        """
+        Gather research using optimized queries from Topic Analyst.
+        
+        Uses the research refinement loop to ensure quality.
+        
+        Args:
+            topic: The corrected topic
+            queries: List of optimized search queries
+            
+        Returns:
+            Combined research context string
+        """
+        research_parts = []
+        
+        # Wikipedia summary for core topic
+        try:
+            wiki_result = self.wikipedia_tool._run(topic, search_type="summary", sentences=5)
+            if wiki_result and "not found" not in wiki_result.lower():
+                research_parts.append(f"BACKGROUND:\n{wiki_result}")
+        except Exception as e:
+            if self.verbose:
+                print(f"  ⚠ Wikipedia search failed: {e}")
+        
+        # Internet research with refinement loop
+        if self.use_internet:
+            if self.verbose:
+                print(f"  → Running research with quality evaluation...")
+            
+            # Use the first optimized query with the refinement loop
+            main_query = queries[0] if queries else topic
+            try:
+                # Call the refinement loop directly via _search_debate_with_refinement
+                result = self.internet_tool._search_debate_with_refinement(main_query, max_retries=5)
+                formatted = self.internet_tool._format_results(result, from_cache=False)
+                if formatted and len(formatted) > 100:
+                    research_parts.append(f"WEB RESEARCH:\n{formatted}")
+            except Exception as e:
+                if self.verbose:
+                    print(f"  ⚠ Research with refinement failed: {e}")
+                # Fallback to regular search
+                try:
+                    fallback = self.internet_tool._run(topic, search_type="debate")
+                    if fallback and len(fallback) > 100:
+                        research_parts.append(f"WEB RESEARCH:\n{fallback}")
+                except Exception:
+                    pass
         
         return "\n\n".join(research_parts)
     
