@@ -28,6 +28,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Import CrewAI components
 try:
     from src.crew.debate_crew import DebateCrew
+    from src.crew.teacher_crew import TeacherCrew
     CREWAI_AVAILABLE = True
     CREWAI_ERROR = None
 except ImportError as e:
@@ -122,6 +123,37 @@ class HumanTurnRequest(BaseModel):
     argument: str = Field(..., min_length=10, description="The human's debate argument")
 
 
+class LessonRequest(BaseModel):
+    """Request for creating a new lesson."""
+    topic: str
+    detail_level: str = Field(default="intermediate", description="beginner, intermediate, or advanced")
+    use_internet: bool = True
+
+
+class LessonContent(BaseModel):
+    """Structured lesson content."""
+    overview: str
+    key_concepts: List[str] = []
+    examples: List[str] = []
+    further_reading: List[dict] = []
+    quiz_questions: List[str] = []
+
+
+class LessonSession(BaseModel):
+    """Active lesson session."""
+    id: str
+    topic: str
+    domain: str
+    detail_level: str
+    status: str  # 'pending', 'running', 'completed', 'error'
+    start_time: str
+    end_time: Optional[str] = None
+    current_step: str = "Initializing"
+    progress: float = 0
+    lesson: Optional[LessonContent] = None
+    error: Optional[str] = None
+
+
 # ============================================================================
 # In-memory storage (replace with database in production)
 # ============================================================================
@@ -129,14 +161,19 @@ class HumanTurnRequest(BaseModel):
 debates: dict[str, DebateSession] = {}
 debate_progress_queues: dict[str, asyncio.Queue] = {}
 human_turn_queues: dict[str, asyncio.Queue] = {}  # Queue for human turn submissions
+lessons: dict[str, LessonSession] = {}  # Lesson sessions storage
+lesson_progress_queues: dict[str, asyncio.Queue] = {}  # SSE queues for lessons
 settings: Settings = Settings()
 
-# Pre-loaded CrewAI debate crew with models loaded in memory
+# Pre-loaded CrewAI crews with models loaded in memory
 preloaded_crew: Optional[DebateCrew] = None
+preloaded_teacher: Optional[TeacherCrew] = None
 
-# Runs directory for persisting results
+# Runs directories
 RUNS_DIR = PROJECT_ROOT / "runs" / "debates"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
+LESSONS_DIR = PROJECT_ROOT / "runs" / "lessons"
+LESSONS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -1000,6 +1037,206 @@ async def stream_debate_progress(debate_id: str):
         }
     )
 
+
+# ============================================================================
+# Teaching Crew API Endpoints
+# ============================================================================
+
+@app.post("/api/lessons", response_model=DebateResponse)
+async def create_lesson(request: LessonRequest, background_tasks: BackgroundTasks):
+    """Create a new lesson session."""
+    if not CREWAI_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Teaching crew not available: {CREWAI_ERROR}"
+        )
+    
+    lesson_id = f"lesson-{uuid.uuid4().hex[:12]}"
+    
+    lesson = LessonSession(
+        id=lesson_id,
+        topic=request.topic,
+        domain="auto",
+        detail_level=request.detail_level,
+        status="pending",
+        start_time=datetime.now().isoformat(),
+        current_step="Initializing",
+        progress=0,
+    )
+    
+    lessons[lesson_id] = lesson
+    lesson_progress_queues[lesson_id] = asyncio.Queue()
+    
+    # Run lesson in background
+    background_tasks.add_task(run_teaching_session, lesson_id, request)
+    
+    return DebateResponse(
+        id=lesson_id,
+        status="pending",
+        message=f"Lesson '{request.topic}' started"
+    )
+
+
+async def run_teaching_session(lesson_id: str, request: LessonRequest):
+    """Run a teaching session in the background."""
+    global preloaded_teacher
+    
+    lesson = lessons.get(lesson_id)
+    if not lesson:
+        return
+    
+    queue = lesson_progress_queues.get(lesson_id)
+    
+    print(f"\n{'='*60}")
+    print(f"STARTING LESSON: {lesson_id}")
+    print(f"Topic: {request.topic}")
+    print(f"Level: {request.detail_level}")
+    print(f"{'='*60}\n")
+    
+    async def send_progress(step: str, progress: float, message: str, extra: dict = None):
+        """Send progress update via SSE."""
+        lesson.current_step = step
+        lesson.progress = progress
+        
+        print(f"  [{step}] {progress:.1f}% - {message}")
+        
+        if queue:
+            event_data = {
+                "type": "lesson_progress",
+                "lesson_id": lesson_id,
+                "status": lesson.status,
+                "step": step,
+                "progress": progress,
+                "message": message,
+            }
+            if extra:
+                event_data.update(extra)
+            await queue.put(event_data)
+    
+    try:
+        lesson.status = "running"
+        await send_progress("Initializing", 0, "Starting lesson generation...")
+        
+        # Use or create teacher crew
+        if preloaded_teacher is None:
+            print("[INFO] Creating new TeacherCrew instance...")
+            teacher = TeacherCrew(
+                use_internet=request.use_internet,
+                output_dir=LESSONS_DIR,
+                verbose=True,
+            )
+        else:
+            print("[INFO] Using preloaded teacher crew")
+            teacher = preloaded_teacher
+            if request.use_internet:
+                teacher.enable_internet()
+            else:
+                teacher.disable_internet()
+        
+        await send_progress("Research", 25, "Gathering information...")
+        
+        # Run teaching synchronously in executor
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(
+                executor,
+                teacher.teach,
+                request.topic,
+                request.detail_level,
+            )
+        
+        await send_progress("Complete", 100, "Lesson generated!")
+        
+        # Store lesson content
+        lesson.domain = result.domain
+        lesson.lesson = LessonContent(
+            overview=result.lesson.overview,
+            key_concepts=result.lesson.key_concepts,
+            examples=result.lesson.examples,
+            further_reading=result.lesson.further_reading,
+            quiz_questions=result.lesson.quiz_questions,
+        )
+        lesson.status = "completed"
+        lesson.end_time = datetime.now().isoformat()
+        
+        # Send completion event
+        if queue:
+            await queue.put({
+                "type": "lesson_complete",
+                "lesson_id": lesson_id,
+                "status": "completed",
+                "lesson": lesson.lesson.dict(),
+            })
+        
+        print(f"\n[COMPLETE] Lesson generated: {lesson_id}")
+        
+    except Exception as e:
+        print(f"[ERROR] Lesson failed: {e}")
+        lesson.status = "error"
+        lesson.error = str(e)
+        lesson.end_time = datetime.now().isoformat()
+        
+        if queue:
+            await queue.put({
+                "type": "error",
+                "lesson_id": lesson_id,
+                "status": "error",
+                "message": str(e),
+            })
+
+
+@app.get("/api/lessons", response_model=List[LessonSession])
+async def list_lessons():
+    """List all lesson sessions."""
+    return list(lessons.values())
+
+
+@app.get("/api/lessons/{lesson_id}", response_model=LessonSession)
+async def get_lesson(lesson_id: str):
+    """Get a specific lesson."""
+    if lesson_id not in lessons:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    return lessons[lesson_id]
+
+
+@app.get("/api/lessons/{lesson_id}/stream")
+async def stream_lesson(lesson_id: str):
+    """Stream lesson progress via SSE."""
+    if lesson_id not in lessons:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    queue = lesson_progress_queues.get(lesson_id)
+    if not queue:
+        raise HTTPException(status_code=404, detail="Lesson stream not available")
+    
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # Send initial state
+        lesson = lessons[lesson_id]
+        yield f"data: {json.dumps({'type': 'lesson_started', 'topic': lesson.topic, 'status': lesson.status})}\n\n"
+        
+        try:
+            while True:
+                try:
+                    progress = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {json.dumps(progress)}\n\n"
+                    
+                    if progress.get("status") in ["completed", "error"]:
+                        break
+                except asyncio.TimeoutError:
+                    yield f": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
 @app.get("/api/settings", response_model=Settings)
 async def get_settings():

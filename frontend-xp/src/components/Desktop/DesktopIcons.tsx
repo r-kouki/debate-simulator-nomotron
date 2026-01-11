@@ -5,7 +5,7 @@ interface DesktopIconData {
   id: string;
   label: string;
   icon: string;
-  component: 'debate-creator' | 'history' | 'settings' | 'my-computer' | 'about' | 'crewai-status';
+  component: 'debate-creator' | 'history' | 'settings' | 'my-computer' | 'about' | 'crewai-status' | 'lesson-creator';
   windowTitle: string;
 }
 
@@ -23,6 +23,13 @@ const desktopIcons: DesktopIconData[] = [
     icon: '💬',
     component: 'debate-creator',
     windowTitle: 'New Debate',
+  },
+  {
+    id: 'new-lesson',
+    label: 'New Lesson',
+    icon: '📚',
+    component: 'lesson-creator',
+    windowTitle: 'New Lesson',
   },
   {
     id: 'crewai-status',

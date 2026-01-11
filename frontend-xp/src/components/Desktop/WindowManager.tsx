@@ -9,6 +9,8 @@ import { SettingsWindow } from '@/components/Settings/SettingsWindow';
 import { AboutWindow } from '@/components/About/AboutWindow';
 import { MyComputerWindow } from '@/components/MyComputer/MyComputerWindow';
 import { CrewAIStatusWindow } from '@/components/CrewAIStatus/CrewAIStatusWindow';
+import { LessonCreatorWindow } from '@/components/LessonCreator/LessonCreatorWindow';
+import { LessonViewerWindow } from '@/components/LessonViewer/LessonViewerWindow';
 
 const windowComponents: Record<string, React.ComponentType<{ windowId: string; componentProps?: Record<string, unknown> }>> = {
   'debate-creator': DebateCreatorWindow,
@@ -19,6 +21,8 @@ const windowComponents: Record<string, React.ComponentType<{ windowId: string; c
   'about': AboutWindow,
   'my-computer': MyComputerWindow,
   'crewai-status': CrewAIStatusWindow,
+  'lesson-creator': LessonCreatorWindow,
+  'lesson-viewer': LessonViewerWindow,
 };
 
 export const WindowManager: React.FC = () => {
@@ -28,7 +32,7 @@ export const WindowManager: React.FC = () => {
     <>
       {windows.map((window) => {
         const WindowContent = windowComponents[window.component];
-        
+
         if (!WindowContent) {
           console.warn(`Unknown window component: ${window.component}`);
           return null;

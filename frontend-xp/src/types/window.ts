@@ -16,7 +16,9 @@ export type WindowComponent =
   | 'settings'
   | 'about'
   | 'my-computer'
-  | 'crewai-status';
+  | 'crewai-status'
+  | 'lesson-creator'
+  | 'lesson-viewer';
 
 export interface WindowState {
   id: string;
