@@ -44,13 +44,28 @@ const NewDebateWindow = () => {
   }, [debate.topicTitle]);
 
   const handleStart = async () => {
-    const participants =
-      mode === "cops-vs-ai"
-        ? [
-            { name: cop1, type: "human" as const },
-            { name: cop2, type: "human" as const }
-          ]
-        : [{ name: playerName, type: "human" as const }];
+    let participants: Array<{ name: string; type: "human" | "ai" }>;
+
+    if (mode === "ai-vs-ai") {
+      // AI vs AI mode - two AI participants
+      participants = [
+        { name: "Pro AI", type: "ai" as const },
+        { name: "Con AI", type: "ai" as const }
+      ];
+    } else if (mode === "cops-vs-ai") {
+      // Cops vs AI - two humans + one AI
+      participants = [
+        { name: cop1, type: "human" as const },
+        { name: cop2, type: "human" as const },
+        { name: "AI Opponent", type: "ai" as const }
+      ];
+    } else {
+      // Human vs AI - one human + one AI
+      participants = [
+        { name: playerName, type: "human" as const },
+        { name: "AI Opponent", type: "ai" as const }
+      ];
+    }
 
     const payload = {
       topicId: debate.topicId,
@@ -58,7 +73,7 @@ const NewDebateWindow = () => {
       stance,
       mode,
       difficulty,
-      participants: [...participants, { name: "AI Opponent", type: "ai" as const }],
+      participants,
       timerSeconds
     };
 

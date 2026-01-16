@@ -7,6 +7,8 @@ import { useDialogStore } from "../../state/dialogStore";
 import { useWindowStore } from "../../state/windowStore";
 import { useNotificationStore } from "../../state/notificationStore";
 
+import { getApiAdapter } from "../../api/adapter";
+
 const DebateSessionWindow = () => {
   const debate = useDebateStore();
   const { openDialog } = useDialogStore();
@@ -35,6 +37,55 @@ const DebateSessionWindow = () => {
     return () => window.clearInterval(timer);
   }, [debate.sessionStatus, debate.tick]);
 
+  // Polling for AI vs AI mode
+  useEffect(() => {
+    if (debate.mode !== "ai-vs-ai" || debate.sessionStatus !== "active" || !debate.debateId) {
+      return;
+    }
+
+    const pollInterval = window.setInterval(async () => {
+      try {
+        const adapter = getApiAdapter();
+        const response = await adapter.getDebate(debate.debateId!);
+
+        if (response.debate && response.turns) {
+          // Check for new turns
+          const existingIds = new Set(debate.transcript.map(t => t.id));
+          const newTurns = response.turns.filter((t: any) => !existingIds.has(t.id));
+
+          if (newTurns.length > 0) {
+            newTurns.forEach((turn: any) => {
+              const scores = response.liveScores?.[turn.id];
+              debate.addMessage({
+                id: turn.id,
+                role: turn.roleLabel || "AI",
+                content: turn.content,
+                timestamp: turn.createdAt,
+                scores: scores
+                  ? {
+                    argumentStrength: Math.round((scores.clarity + scores.logic) / 2),
+                    evidenceUse: scores.evidence,
+                    civility: scores.civility,
+                    relevance: scores.relevance
+                  }
+                  : undefined
+              });
+            });
+
+            // Check if debate ended
+            if (response.debate.status === "ENDED" || response.debate.status === "CANCELLED") {
+              // Handle end?
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Polling error:", error);
+      }
+    }, 2000);
+
+    return () => window.clearInterval(pollInterval);
+  }, [debate.mode, debate.sessionStatus, debate.debateId, debate.transcript]);
+
   const canSend = input.trim().length > 0 && debate.sessionStatus === "active";
 
   const handleSend = async () => {
@@ -50,19 +101,19 @@ const DebateSessionWindow = () => {
     };
     debate.addMessage(userMessage);
     setInput("");
-    
+
     // Show "AI is typing..." immediately
     setIsAiTyping(true);
-    
+
     try {
       const response = await sendTurn.mutateAsync({
         debateId: debate.debateId,
         message: userMessage.content,
         role: userMessage.role
       });
-      
+
       setIsAiTyping(false);
-      
+
       debate.setLiveScore(messageId, response.updatedScores);
       debate.updateCombo(response.updatedScores);
       debate.addMessage({

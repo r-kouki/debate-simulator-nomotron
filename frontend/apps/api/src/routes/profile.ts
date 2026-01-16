@@ -87,12 +87,54 @@ export const registerProfileRoutes = (app: FastifyInstance) => {
       }
     },
     async () => {
-      const players = await prisma.player.findMany({
+      const dbPlayers = await prisma.player.findMany({
         include: { stats: true, achievements: { include: { achievement: true } }, history: true },
         orderBy: { xp: "desc" },
         take: 10
       });
-      return { players: players.map(mapProfile) };
+
+      const mockPlayers = [
+        {
+          playerId: "mock-kouki",
+          username: "kouki",
+          avatar: "👑",
+          level: 42,
+          xp: 21000,
+          xpNext: 21500,
+          rankTitle: "Grandmaster",
+          stats: {
+            wins: 150,
+            losses: 12,
+            winRate: 92,
+            averageScore: 95,
+            bestStreak: 25,
+            topicsPlayed: 162
+          },
+          achievements: [{ id: "legend", title: "Legend", description: "Top ranking", unlocked: true }],
+          history: []
+        },
+        {
+          playerId: "mock-abdou",
+          username: "abdou",
+          avatar: "🔥",
+          level: 38,
+          xp: 19000,
+          xpNext: 19500,
+          rankTitle: "Master",
+          stats: {
+            wins: 120,
+            losses: 25,
+            winRate: 82,
+            averageScore: 88,
+            bestStreak: 15,
+            topicsPlayed: 145
+          },
+          achievements: [{ id: "veteran", title: "Veteran", description: "100+ games", unlocked: true }],
+          history: []
+        }
+      ];
+
+      return { players: [...mockPlayers, ...dbPlayers.map(mapProfile)] };
     }
   );
 };

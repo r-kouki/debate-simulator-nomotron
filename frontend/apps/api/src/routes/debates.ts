@@ -20,6 +20,77 @@ import { judgeAgent } from "../agents/judgeAgent";
 import { eventBus } from "../services/eventBus";
 import { updatePlayerAfterMatch } from "../services/gamification";
 
+// Frontend compatibility schema - accepts the format sent by the React frontend
+const FrontendDebateRequestSchema = z.object({
+  topicId: z.string().optional(),
+  topicTitle: z.string().min(1).max(200),
+  stance: z.enum(["pro", "con", "neutral"]),
+  mode: z.enum(["human-vs-ai", "cops-vs-ai", "ai-vs-ai"]),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  participants: z.array(z.object({
+    name: z.string(),
+    type: z.enum(["human", "ai", "judge"])
+  })),
+  timerSeconds: z.number().int().min(30).max(900).optional()
+});
+
+// Transform frontend format to backend format
+const transformFrontendRequest = (frontendReq: z.infer<typeof FrontendDebateRequestSchema>) => {
+  const modeMap: Record<string, "HUMAN_VS_AI" | "COPS_VS_AI" | "AI_VS_AI" | "HUMAN_VS_HUMAN"> = {
+    "human-vs-ai": "HUMAN_VS_AI",
+    "cops-vs-ai": "COPS_VS_AI",
+    "ai-vs-ai": "AI_VS_AI"
+  };
+
+  const stanceMap: Record<string, "PRO" | "CON"> = {
+    "pro": "PRO",
+    "con": "CON",
+    "neutral": "PRO" // Default to PRO if neutral
+  };
+
+  // Assign stances to participants - humans get the user's stance, AI gets opposite
+  const userStance = stanceMap[frontendReq.stance] || "PRO";
+  const aiStance = userStance === "PRO" ? "CON" : "PRO";
+
+  // For AI vs AI, alternate stances between participants
+  const isAiVsAi = frontendReq.mode === "ai-vs-ai";
+  let aiIndex = 0;
+
+  return {
+    mode: modeMap[frontendReq.mode] || "HUMAN_VS_AI",
+    topic: frontendReq.topicTitle,
+    rounds: 3, // Default rounds
+    turnSeconds: frontendReq.timerSeconds || 120,
+    participants: frontendReq.participants.map((p, index) => {
+      if (p.type === "ai") {
+        // For AI vs AI, first AI is PRO, second is CON
+        const stance = isAiVsAi ? (aiIndex++ === 0 ? "PRO" : "CON") : aiStance;
+        return { type: "AI" as const, name: p.name, stance };
+      }
+      return { type: "HUMAN" as const, name: p.name, stance: userStance };
+    })
+  };
+};
+
+// Combined schema that accepts either format
+const CombinedDebateRequestSchema = z.union([
+  CreateDebateRequestSchema,
+  FrontendDebateRequestSchema
+]);
+
+// Frontend turn request schema - frontend sends {message, role} instead of {participantId, content}
+const FrontendTurnRequestSchema = z.object({
+  debateId: z.string().optional(), // Sometimes included in body
+  message: z.string().min(1).max(4000),
+  role: z.string()
+});
+
+// Combined turn request schema
+const CombinedTurnRequestSchema = z.union([
+  CreateTurnRequestSchema,
+  FrontendTurnRequestSchema
+]);
+
 export const registerDebateRoutes = (app: FastifyInstance) => {
   const api = app.withTypeProvider<ZodTypeProvider>();
   const ErrorSchema = z.object({ error: z.string() });
@@ -28,13 +99,22 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
     "/debates",
     {
       schema: {
-        body: CreateDebateRequestSchema,
+        body: CombinedDebateRequestSchema,
         response: { 200: CreateDebateResponseSchema }
       }
     },
     async (request) => {
       const playerId = request.headers["x-player-id"] as string | undefined;
-      const debate = await createDebate({ ...request.body, playerId });
+
+      // Detect and transform frontend format if necessary
+      let body = request.body as z.infer<typeof CombinedDebateRequestSchema>;
+
+      // Check if this is frontend format (has topicTitle instead of topic)
+      if ("topicTitle" in body && typeof body.topicTitle === "string") {
+        body = transformFrontendRequest(body as z.infer<typeof FrontendDebateRequestSchema>);
+      }
+
+      const debate = await createDebate({ ...body as z.infer<typeof CreateDebateRequestSchema>, playerId });
       if (debate.mode === "AI_VS_AI") {
         runAiVsAiDebate(debate.id).catch((error) => {
           request.log.error(error, "AI_VS_AI run failed");
@@ -125,7 +205,7 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
     "/debates/:id/turns",
     {
       schema: {
-        body: CreateTurnRequestSchema,
+        body: CombinedTurnRequestSchema,
         response: { 200: CreateTurnResponseSchema, 404: ErrorSchema },
         config: {
           rateLimit: { max: 20, timeWindow: "1 minute" }
@@ -134,7 +214,6 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
     },
     async (request, reply) => {
       const debateId = (request.params as { id: string }).id;
-      const { participantId, content } = request.body;
       const debate = await prisma.debate.findUnique({
         where: { id: debateId },
         include: { participants: true, turns: true }
@@ -143,6 +222,35 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: "Debate not found" };
       }
+
+      // Detect and transform frontend format if necessary
+      let participantId: string;
+      let content: string;
+
+      const body = request.body as z.infer<typeof CombinedTurnRequestSchema>;
+
+      if ("message" in body && typeof body.message === "string") {
+        // Frontend format - lookup participant by role/name
+        const frontendBody = body as z.infer<typeof FrontendTurnRequestSchema>;
+        content = frontendBody.message;
+
+        // Find participant by name/role
+        const participant = debate.participants.find(
+          (p) => p.name === frontendBody.role || p.roleLabel === frontendBody.role
+        ) || debate.participants.find((p) => p.type === "HUMAN");
+
+        if (!participant) {
+          reply.code(400);
+          return { error: "Could not find participant for role: " + frontendBody.role };
+        }
+        participantId = participant.id;
+      } else {
+        // Backend format
+        const backendBody = body as z.infer<typeof CreateTurnRequestSchema>;
+        participantId = backendBody.participantId;
+        content = backendBody.content;
+      }
+
       const { turn, scores } = await createTurn({ debateId, participantId, content });
 
       const aiParticipant = debate.participants.find((p) => p.type === "AI");
@@ -184,13 +292,13 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
         },
         aiTurns: aiTurns.length
           ? aiTurns.map((ai) => ({
-              id: ai.id,
-              debateId: ai.debateId,
-              participantId: ai.participantId,
-              roleLabel: ai.roleLabel,
-              content: ai.content,
-              createdAt: ai.createdAt.toISOString()
-            }))
+            id: ai.id,
+            debateId: ai.debateId,
+            participantId: ai.participantId,
+            roleLabel: ai.roleLabel,
+            content: ai.content,
+            createdAt: ai.createdAt.toISOString()
+          }))
           : undefined,
         updatedScores: scores,
         events
@@ -261,7 +369,7 @@ export const registerDebateRoutes = (app: FastifyInstance) => {
       const aggregate = aggregateScores(scoreList);
       const finalScore = Math.round(
         (aggregate.clarity + aggregate.logic + aggregate.evidence + aggregate.rebuttal + aggregate.civility + aggregate.relevance) /
-          6
+        6
       );
 
       await prisma.finalScore.upsert({

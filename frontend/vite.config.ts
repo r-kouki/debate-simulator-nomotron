@@ -7,7 +7,7 @@ export default defineConfig({
     proxy: {
       // Proxy theme agent requests to the TypeScript API
       "/api/agents": {
-        target: "http://localhost:4000",
+        target: "http://localhost:3000",
         changeOrigin: true
       }
     }

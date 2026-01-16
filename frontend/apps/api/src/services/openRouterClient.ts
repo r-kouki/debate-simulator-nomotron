@@ -58,6 +58,7 @@ export const openRouterChat = async (payload: {
   toolChoice?: "auto" | "none";
   modelOverride?: string;
   temperature?: number;
+  maxTokens?: number;
 }): Promise<ChatCompletionResult> => {
   const env = getEnv();
   const model = payload.modelOverride || env.openRouterModel;
@@ -71,7 +72,8 @@ export const openRouterChat = async (payload: {
     messages: payload.messages,
     tools: payload.tools,
     tool_choice: payload.toolChoice ?? "auto",
-    temperature: payload.temperature ?? 0.4
+    temperature: payload.temperature ?? 0.4,
+    max_tokens: payload.maxTokens ?? 1024
   };
 
   return retry(async () => {

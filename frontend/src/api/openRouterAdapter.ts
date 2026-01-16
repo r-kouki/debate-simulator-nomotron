@@ -148,6 +148,7 @@ export const openRouterAdapter: ApiAdapter = {
   searchTopics: async (query: string): Promise<TopicSearchResponse> =>
     mockAdapter.searchTopics(query),
   getTopic: async (id: string): Promise<TopicDetail> => mockAdapter.getTopic(id),
+  getDebate: async (id: string): Promise<any> => mockAdapter.getDebate(id),
   startDebate: async (payload: StartDebateRequest): Promise<StartDebateResponse> => {
     const response = await mockAdapter.startDebate(payload);
     debates.set(response.debateId, payload);

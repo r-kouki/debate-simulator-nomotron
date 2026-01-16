@@ -78,6 +78,14 @@ export const mockAdapter: ApiAdapter = {
     }
     return detail;
   },
+  getDebate: async (id: string): Promise<any> => {
+    await delay(200);
+    const debate = debates.get(id);
+    if (!debate) {
+      throw new Error("Debate not found");
+    }
+    return debate;
+  },
   startDebate: async (payload: StartDebateRequest): Promise<StartDebateResponse> => {
     await delay(300);
     const debateId = `debate-${Math.random().toString(36).slice(2, 8)}`;

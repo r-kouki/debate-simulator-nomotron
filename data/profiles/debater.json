@@ -2,14 +2,14 @@
   "username": "Debater",
   "avatar": "default",
   "level": 1,
-  "xp": 70,
+  "xp": 71,
   "xpNext": 100,
   "rankTitle": "Novice",
   "stats": {
     "wins": 0,
     "losses": 1,
     "winRate": 0.0,
-    "averageScore": 70.0,
+    "averageScore": 71.0,
     "bestStreak": 0,
     "topicsPlayed": 1
   },
@@ -24,7 +24,7 @@
       "id": "first-win",
       "title": "Victory!",
       "description": "Win your first debate",
-      "unlocked": false
+      "unlocked": true
     },
     {
       "id": "combo-starter",
@@ -48,7 +48,7 @@
       "id": "civil-debater",
       "title": "Civil Debater",
       "description": "Maintain 95+ civility across a debate",
-      "unlocked": false
+      "unlocked": true
     },
     {
       "id": "topic-explorer",
@@ -77,11 +77,11 @@
   ],
   "history": [
     {
-      "id": "match-20260106141733",
-      "topic": "AI in Education",
-      "mode": "ai-vs-ai",
-      "date": "2026-01-06T14:17:33.787172",
-      "score": 70,
+      "id": "match-20260116162023",
+      "topic": "ai in education ",
+      "mode": "human-vs-ai",
+      "date": "2026-01-16T16:20:23.559670",
+      "score": 71,
       "result": "Loss"
     }
   ]

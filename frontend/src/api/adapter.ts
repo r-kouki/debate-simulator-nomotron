@@ -25,6 +25,7 @@ export type ApiAdapter = {
   health: () => Promise<{ ok: boolean; version?: string }>;
   searchTopics: (query: string) => Promise<TopicSearchResponse>;
   getTopic: (id: string) => Promise<TopicDetail>;
+  getDebate: (id: string) => Promise<any>;
   startDebate: (payload: StartDebateRequest) => Promise<StartDebateResponse>;
   sendTurn: (payload: SendTurnRequest) => Promise<SendTurnResponse>;
   nextTurn: (debateId: string) => Promise<NextTurnResponse>;
@@ -40,8 +41,35 @@ const createFetchAdapter = (baseUrl: string): ApiAdapter => {
     health: () => client.get("/health"),
     searchTopics: (query) => client.get(`/topics/search?q=${encodeURIComponent(query)}`),
     getTopic: (id) => client.get(`/topics/${id}`),
+    getDebate: (id) => client.get(`/debates/${id}`),
     startDebate: (payload) => client.post("/debates", payload),
-    sendTurn: (payload) => client.post(`/debates/${payload.debateId}/turns`, payload),
+    sendTurn: async (payload) => {
+      const backendResponse = await client.post<{
+        acceptedTurn: { content: string };
+        aiTurns?: Array<{ content: string }>;
+        updatedScores: {
+          clarity: number;
+          logic: number;
+          evidence: number;
+          rebuttal: number;
+          civility: number;
+          relevance: number;
+        };
+        events?: string[];
+      }>(`/debates/${payload.debateId}/turns`, payload);
+
+      // Transform backend response to frontend format
+      return {
+        aiMessage: backendResponse.aiTurns?.[0]?.content ?? "",
+        updatedScores: {
+          argumentStrength: Math.round((backendResponse.updatedScores.clarity + backendResponse.updatedScores.logic) / 2),
+          evidenceUse: backendResponse.updatedScores.evidence,
+          civility: backendResponse.updatedScores.civility,
+          relevance: backendResponse.updatedScores.relevance
+        },
+        events: backendResponse.events
+      };
+    },
     nextTurn: (debateId) => client.post(`/debates/${debateId}/next-turn`, {}),
     scoreDebate: (payload) => client.post(`/debates/${payload.debateId}/score`, payload),
     getProfile: () => client.get("/profile"),
@@ -87,6 +115,7 @@ const withFallback = (primary: ApiAdapter, fallback: ApiAdapter): ApiAdapter => 
     },
     searchTopics: (query) => wrap(() => primary.searchTopics(query), () => fallback.searchTopics(query)),
     getTopic: (id) => wrap(() => primary.getTopic(id), () => fallback.getTopic(id)),
+    getDebate: (id) => wrap(() => primary.getDebate(id), () => fallback.getDebate(id)),
     startDebate: (payload) => wrap(() => primary.startDebate(payload), () => fallback.startDebate(payload)),
     sendTurn: (payload) => wrap(() => primary.sendTurn(payload), () => fallback.sendTurn(payload)),
     nextTurn: (debateId) => wrap(() => primary.nextTurn(debateId), () => fallback.nextTurn(debateId)),
