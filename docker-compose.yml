@@ -1,0 +1,66 @@
+# ============================================================================
+# Debate Simulator - Docker Compose
+# ============================================================================
+# 
+# Prerequisites:
+#   - Docker with NVIDIA Container Toolkit (for GPU support)
+#   - Models downloaded to ./models directory
+#
+# Usage:
+#   docker compose up --build
+#
+# Access:
+#   - Frontend: http://localhost:4040
+#   - Backend API: http://localhost:5040/api
+#
+# ============================================================================
+
+services:
+  # Backend API Service (Python + CUDA)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: debate-backend
+    ports:
+      - "5040:5040"
+    volumes:
+      # Persist debate runs
+      - ./runs:/app/runs
+      # Mount models (don't copy into image - they're large)
+      - ./models:/app/models:ro
+    environment:
+      - PYTHONPATH=/app
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5040/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+  # Frontend Service (React + Nginx)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: debate-frontend
+    ports:
+      - "4040:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+# Optional: Named volume for persistent data
+volumes:
+  debate-runs:
+    driver: local

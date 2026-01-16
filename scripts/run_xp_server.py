@@ -28,7 +28,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Import CrewAI components
 try:
     from src.crew.debate_crew import DebateCrew
-    from src.crew.teacher_crew import TeacherCrew
     CREWAI_AVAILABLE = True
     CREWAI_ERROR = None
 except ImportError as e:
@@ -39,6 +38,20 @@ except Exception as e:
     CREWAI_AVAILABLE = False
     CREWAI_ERROR = str(e)
     print(f"ERROR: Failed to import CrewAI: {e}")
+
+# Import TeacherCrew for lesson generation
+try:
+    from src.crew.teacher_crew import TeacherCrew
+    TEACHER_AVAILABLE = True
+    TEACHER_ERROR = None
+except ImportError as e:
+    TEACHER_AVAILABLE = False
+    TEACHER_ERROR = str(e)
+    print(f"WARNING: TeacherCrew not available: {e}")
+except Exception as e:
+    TEACHER_AVAILABLE = False
+    TEACHER_ERROR = str(e)
+    print(f"WARNING: Failed to import TeacherCrew: {e}")
 
 
 # ============================================================================
@@ -52,8 +65,8 @@ class DebateRequest(BaseModel):
     recommend_guests: bool = False
     domain: Optional[str] = "auto"
     adapter: Optional[str] = "auto"
-    mode: str = Field(default="ai_vs_ai", description="Debate mode: 'ai_vs_ai' or 'human_vs_ai'")
-    human_side: Optional[str] = Field(default=None, description="If human_vs_ai mode, which side human plays: 'pro' or 'con'")
+    mode: Optional[str] = "ai_vs_ai"  # 'ai_vs_ai' or 'human_vs_ai'
+    human_side: Optional[str] = "pro"  # 'pro' or 'con' when mode='human_vs_ai'
 
 
 class DebateResponse(BaseModel):
@@ -82,7 +95,7 @@ class DebateSession(BaseModel):
     topic: str
     domain: str
     rounds: int
-    status: str  # 'pending', 'running', 'completed', 'error', 'stopped', 'waiting_for_human'
+    status: str  # 'pending', 'running', 'completed', 'error', 'stopped'
     start_time: str
     end_time: Optional[str] = None
     current_round: int = 0
@@ -93,8 +106,6 @@ class DebateSession(BaseModel):
     current_argument: Optional[str] = None
     judge_score: Optional[JudgeScore] = None
     error: Optional[str] = None
-    mode: str = "ai_vs_ai"  # 'ai_vs_ai' or 'human_vs_ai'
-    human_side: Optional[str] = None  # 'pro' or 'con' if human mode
 
 
 class Settings(BaseModel):
@@ -119,28 +130,35 @@ class AdapterInfo(BaseModel):
 
 
 class HumanTurnRequest(BaseModel):
-    """Request body for submitting a human's debate turn."""
-    argument: str = Field(..., min_length=10, description="The human's debate argument")
+    """Request body for submitting a human argument."""
+    argument: str
 
 
 class LessonRequest(BaseModel):
-    """Request for creating a new lesson."""
+    """Request body for creating a new lesson."""
     topic: str
-    detail_level: str = Field(default="intermediate", description="beginner, intermediate, or advanced")
+    detail_level: str = "intermediate"  # beginner, intermediate, advanced
     use_internet: bool = True
 
 
-class LessonContent(BaseModel):
+class LessonResponse(BaseModel):
+    """Response when a lesson is created."""
+    id: str
+    status: str
+    message: str
+
+
+class LessonSection(BaseModel):
     """Structured lesson content."""
+    topic: str
     overview: str
     key_concepts: List[str] = []
     examples: List[str] = []
-    further_reading: List[dict] = []
     quiz_questions: List[str] = []
 
 
 class LessonSession(BaseModel):
-    """Active lesson session."""
+    """A lesson session with status and content."""
     id: str
     topic: str
     domain: str
@@ -148,9 +166,9 @@ class LessonSession(BaseModel):
     status: str  # 'pending', 'running', 'completed', 'error'
     start_time: str
     end_time: Optional[str] = None
-    current_step: str = "Initializing"
     progress: float = 0
-    lesson: Optional[LessonContent] = None
+    current_step: str = "Initializing"
+    lesson: Optional[LessonSection] = None
     error: Optional[str] = None
 
 
@@ -160,16 +178,17 @@ class LessonSession(BaseModel):
 
 debates: dict[str, DebateSession] = {}
 debate_progress_queues: dict[str, asyncio.Queue] = {}
-human_turn_queues: dict[str, asyncio.Queue] = {}  # Queue for human turn submissions
-lessons: dict[str, LessonSession] = {}  # Lesson sessions storage
-lesson_progress_queues: dict[str, asyncio.Queue] = {}  # SSE queues for lessons
 settings: Settings = Settings()
 
-# Pre-loaded CrewAI crews with models loaded in memory
-preloaded_crew: Optional[DebateCrew] = None
-preloaded_teacher: Optional[TeacherCrew] = None
+# Lessons storage
+lessons: dict[str, LessonSession] = {}
+lesson_progress_queues: dict[str, asyncio.Queue] = {}
 
-# Runs directories
+# Pre-loaded CrewAI debate crew with models loaded in memory
+preloaded_crew: Optional[DebateCrew] = None
+preloaded_teacher_crew: Optional["TeacherCrew"] = None
+
+# Runs directories for persisting results
 RUNS_DIR = PROJECT_ROOT / "runs" / "debates"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 LESSONS_DIR = PROJECT_ROOT / "runs" / "lessons"
@@ -399,7 +418,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
                         progress=progress,
                         message=message,
                         argument=data if event_type == "argument" else None,
-                        extra=data if event_type not in ("argument",) else None
+                        extra=data if event_type != "argument" else None
                     ),
                     loop
                 )
@@ -466,20 +485,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             fact_check_passed=True
         )
         
-        # Send completion with proper type (including recommended guests)
-        guests_data = []
-        if result.recommended_guests:
-            guests_data = [
-                {
-                    "name": g.name,
-                    "credentials": g.credentials,
-                    "stance": g.known_stance,
-                    "bio": g.bio,
-                    "sourceUrl": g.source_url,
-                }
-                for g in result.recommended_guests
-            ]
-        
+        # Send completion with proper type
         await send_progress(
             "debate_complete", "Completed", request.rounds, 100,
             f"Debate completed! Winner: {result.judge_score.winner.upper()}",
@@ -490,8 +496,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
                     "proScore": result.judge_score.pro_score,
                     "conScore": result.judge_score.con_score,
                     "reasoning": result.judge_score.reasoning,
-                },
-                "recommendedGuests": guests_data,
+                }
             }
         )
         
@@ -518,227 +523,7 @@ async def run_crewai_debate(debate_id: str, request: DebateRequest):
             })
 
 
-async def run_human_vs_ai_debate(debate_id: str, request: DebateRequest):
-    """Run a human vs AI debate with turn-based interaction."""
-    debate = debates.get(debate_id)
-    if not debate:
-        print(f"[ERROR] Debate {debate_id} not found in store")
-        return
-    
-    queue = debate_progress_queues.get(debate_id)
-    human_queue = human_turn_queues.get(debate_id)
-    
-    print(f"\n{'='*60}")
-    print(f"STARTING HUMAN VS AI DEBATE: {debate_id}")
-    print(f"Topic: {request.topic}")
-    print(f"Rounds: {request.rounds}")
-    print(f"Human side: {request.human_side}")
-    print(f"{'='*60}\n")
-    
-    async def send_progress(event_type: str, step: str, round_num: int, progress: float, message: str, argument: dict = None, extra: dict = None):
-        """Helper to send progress updates."""
-        debate.current_step = step
-        debate.current_round = round_num
-        debate.progress = progress
-        
-        print(f"  [{step}] Round {round_num} - {progress:.1f}% - {message}")
-        
-        if argument:
-            arg = DebateArgument(
-                side=argument["side"],
-                round=argument.get("round", round_num),
-                content=argument["content"],
-                timestamp=datetime.now().isoformat()
-            )
-            if argument["side"] == "pro":
-                debate.pro_arguments.append(arg)
-            else:
-                debate.con_arguments.append(arg)
-            debate.current_argument = arg.content
-        
-        if queue:
-            event_data = {
-                "type": event_type,
-                "debate_id": debate_id,
-                "status": debate.status,
-                "step": step,
-                "round": round_num,
-                "progress": progress,
-                "message": message,
-                "mode": "human_vs_ai",
-                "human_side": request.human_side,
-            }
-            if argument:
-                event_data["side"] = argument["side"]
-                event_data["content"] = argument["content"]
-            if extra:
-                event_data.update(extra)
-            await queue.put(event_data)
-    
-    try:
-        debate.status = "running"
-        await send_progress("debate_started", "Initializing", 0, 0, "Starting Human vs AI debate...", extra={"topic": request.topic})
-        
-        # Use preloaded crew or create new one
-        crew = preloaded_crew
-        if crew is None:
-            print("[WARNING] No preloaded crew available, creating new one...")
-            crew = DebateCrew(
-                use_internet=request.use_internet,
-                output_dir=PROJECT_ROOT / "runs" / "debates",
-                verbose=True,
-            )
-        
-        # Initialize debate tools
-        crew._init_debate_tools()
-        crew._debate_tool_pro.clear_history()
-        crew._debate_tool_con.clear_history()
-        
-        # Determine AI side
-        ai_side = "con" if request.human_side == "pro" else "pro"
-        
-        # Route domain
-        from src.crew.agents.router_agent import classify_domain
-        domain, _ = classify_domain(request.topic)
-        
-        # Gather research
-        await send_progress("log", "Researching", 0, 10, "Gathering research context...")
-        research_context = crew._gather_research(request.topic)
-        
-        pro_arguments = []
-        con_arguments = []
-        
-        for round_num in range(1, request.rounds + 1):
-            # Determine turn order (Pro always goes first)
-            turns = [("pro", round_num), ("con", round_num)]
-            
-            for side, rnd in turns:
-                is_human_turn = (side == request.human_side)
-                
-                if is_human_turn:
-                    # Wait for human input
-                    debate.status = "waiting_for_human"
-                    await send_progress(
-                        "waiting_for_human", 
-                        f"Waiting for your {side.upper()} argument", 
-                        rnd, 
-                        20 + (rnd * 30) - 15, 
-                        f"Your turn! Enter your {side.upper()} argument for Round {rnd}.",
-                        extra={"expected_side": side, "round": rnd}
-                    )
-                    
-                    print(f"  [WAITING] For human {side.upper()} argument...")
-                    
-                    # Wait for human submission (with timeout)
-                    try:
-                        human_arg = await asyncio.wait_for(human_queue.get(), timeout=600)  # 10 min timeout
-                        print(f"  [RECEIVED] Human argument: {human_arg[:100]}...")
-                    except asyncio.TimeoutError:
-                        raise Exception("Timeout waiting for human input")
-                    
-                    debate.status = "running"
-                    
-                    # Record the human argument
-                    if side == "pro":
-                        pro_arguments.append(human_arg)
-                        crew._debate_tool_con.add_external_turn("pro", human_arg, rnd)
-                    else:
-                        con_arguments.append(human_arg)
-                        crew._debate_tool_pro.add_external_turn("con", human_arg, rnd)
-                    
-                    await send_progress(
-                        "argument",
-                        f"Human {side.upper()}",
-                        rnd,
-                        20 + (rnd * 30),
-                        f"Human {side.upper()} argument received",
-                        argument={"side": side, "content": human_arg, "round": rnd, "is_human": True}
-                    )
-                    
-                else:
-                    # AI generates argument
-                    await send_progress("log", f"AI {side.upper()} Thinking", rnd, 20 + (rnd * 30) - 10, f"AI generating {side.upper()} argument...")
-                    
-                    ai_arg = crew._generate_argument(
-                        topic=request.topic,
-                        domain=domain,
-                        stance=side,
-                        research_context=research_context,
-                        round_num=rnd,
-                    )
-                    
-                    if side == "pro":
-                        pro_arguments.append(ai_arg)
-                        crew._debate_tool_con.add_external_turn("pro", ai_arg, rnd)
-                    else:
-                        con_arguments.append(ai_arg)
-                        crew._debate_tool_pro.add_external_turn("con", ai_arg, rnd)
-                    
-                    await send_progress(
-                        "argument",
-                        f"AI {side.upper()}",
-                        rnd,
-                        20 + (rnd * 30),
-                        f"AI {side.upper()} argument generated",
-                        argument={"side": side, "content": ai_arg, "round": rnd, "is_human": False}
-                    )
-        
-        # Fact-check and judge
-        await send_progress("log", "Fact Checking", request.rounds, 85, "Verifying arguments...")
-        fact_check = crew._fact_check_debate(pro_arguments, con_arguments, research_context)
-        
-        await send_progress("log", "Judging", request.rounds, 90, "Judge evaluating...")
-        from src.crew.agents.judge_agent import judge_debate
-        judge_score = judge_debate(pro_arguments, con_arguments, fact_check)
-        
-        # Complete
-        debate.status = "completed"
-        debate.end_time = datetime.now().isoformat()
-        debate.progress = 100
-        debate.judge_score = JudgeScore(
-            winner=judge_score.winner,
-            pro_score=judge_score.pro_score,
-            con_score=judge_score.con_score,
-            reasoning=judge_score.reasoning,
-            fact_check_passed=True
-        )
-        
-        await send_progress(
-            "debate_complete", "Completed", request.rounds, 100,
-            f"Debate complete! Winner: {judge_score.winner.upper()}",
-            extra={
-                "winner": judge_score.winner,
-                "judgeScore": {
-                    "winner": judge_score.winner,
-                    "proScore": judge_score.pro_score,
-                    "conScore": judge_score.con_score,
-                    "reasoning": judge_score.reasoning,
-                }
-            }
-        )
-        
-        save_debate_result(debate)
-        print(f"\n{'='*60}")
-        print(f"HUMAN VS AI DEBATE COMPLETE: {debate_id}")
-        print(f"Winner: {judge_score.winner}")
-        print(f"{'='*60}\n")
-        
-    except Exception as e:
-        import traceback
-        print(f"\n[ERROR] Human vs AI debate failed: {e}")
-        traceback.print_exc()
-        
-        debate.status = "error"
-        debate.error = str(e)
-        if queue:
-            await queue.put({
-                "type": "error",
-                "debate_id": debate_id,
-                "status": "error",
-                "step": "Error",
-                "round": 0,
-                "message": str(e),
-            })
+# ============================================================================
 # FastAPI App
 # ============================================================================
 
@@ -881,13 +666,6 @@ async def create_debate(request: DebateRequest, background_tasks: BackgroundTask
             detail=f"CrewAI is not available: {CREWAI_ERROR}. Please check the server logs."
         )
     
-    # Validate human mode settings
-    if request.mode == "human_vs_ai" and request.human_side not in ("pro", "con"):
-        raise HTTPException(
-            status_code=400,
-            detail="human_side must be 'pro' or 'con' when mode is 'human_vs_ai'"
-        )
-    
     debate_id = f"debate-{uuid.uuid4().hex[:12]}"
     
     # Determine domain
@@ -900,27 +678,18 @@ async def create_debate(request: DebateRequest, background_tasks: BackgroundTask
         rounds=request.rounds,
         status="pending",
         start_time=datetime.now().isoformat(),
-        mode=request.mode,
-        human_side=request.human_side,
     )
     
     debates[debate_id] = debate
     debate_progress_queues[debate_id] = asyncio.Queue()
     
-    # Create human turn queue for human vs AI mode
-    if request.mode == "human_vs_ai":
-        human_turn_queues[debate_id] = asyncio.Queue()
-    
-    # Start debate in background
-    if request.mode == "ai_vs_ai":
-        background_tasks.add_task(run_crewai_debate, debate_id, request)
-    else:
-        background_tasks.add_task(run_human_vs_ai_debate, debate_id, request)
+    # Start CrewAI debate in background
+    background_tasks.add_task(run_crewai_debate, debate_id, request)
     
     return DebateResponse(
         id=debate_id,
         status="created",
-        message=f"Debate created ({request.mode} mode)..."
+        message="Debate created and starting..."
     )
 
 
@@ -958,32 +727,6 @@ async def delete_debate(debate_id: str):
         shutil.rmtree(debate_dir)
     
     return {"status": "deleted"}
-
-
-@app.post("/api/debates/{debate_id}/human-turn")
-async def submit_human_turn(debate_id: str, turn: HumanTurnRequest):
-    """Submit a human's debate turn argument."""
-    if debate_id not in debates:
-        raise HTTPException(status_code=404, detail="Debate not found")
-    
-    debate = debates[debate_id]
-    
-    if debate.mode != "human_vs_ai":
-        raise HTTPException(status_code=400, detail="This debate is not in human_vs_ai mode")
-    
-    if debate.status != "waiting_for_human":
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Not waiting for human input. Current status: {debate.status}"
-        )
-    
-    if debate_id not in human_turn_queues:
-        raise HTTPException(status_code=500, detail="Human turn queue not found")
-    
-    # Put the human argument in the queue
-    await human_turn_queues[debate_id].put(turn.argument)
-    
-    return {"status": "submitted", "message": "Argument submitted successfully"}
 
 
 @app.post("/api/debates/{debate_id}/stop")
@@ -1038,206 +781,6 @@ async def stream_debate_progress(debate_id: str):
     )
 
 
-# ============================================================================
-# Teaching Crew API Endpoints
-# ============================================================================
-
-@app.post("/api/lessons", response_model=DebateResponse)
-async def create_lesson(request: LessonRequest, background_tasks: BackgroundTasks):
-    """Create a new lesson session."""
-    if not CREWAI_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Teaching crew not available: {CREWAI_ERROR}"
-        )
-    
-    lesson_id = f"lesson-{uuid.uuid4().hex[:12]}"
-    
-    lesson = LessonSession(
-        id=lesson_id,
-        topic=request.topic,
-        domain="auto",
-        detail_level=request.detail_level,
-        status="pending",
-        start_time=datetime.now().isoformat(),
-        current_step="Initializing",
-        progress=0,
-    )
-    
-    lessons[lesson_id] = lesson
-    lesson_progress_queues[lesson_id] = asyncio.Queue()
-    
-    # Run lesson in background
-    background_tasks.add_task(run_teaching_session, lesson_id, request)
-    
-    return DebateResponse(
-        id=lesson_id,
-        status="pending",
-        message=f"Lesson '{request.topic}' started"
-    )
-
-
-async def run_teaching_session(lesson_id: str, request: LessonRequest):
-    """Run a teaching session in the background."""
-    global preloaded_teacher
-    
-    lesson = lessons.get(lesson_id)
-    if not lesson:
-        return
-    
-    queue = lesson_progress_queues.get(lesson_id)
-    
-    print(f"\n{'='*60}")
-    print(f"STARTING LESSON: {lesson_id}")
-    print(f"Topic: {request.topic}")
-    print(f"Level: {request.detail_level}")
-    print(f"{'='*60}\n")
-    
-    async def send_progress(step: str, progress: float, message: str, extra: dict = None):
-        """Send progress update via SSE."""
-        lesson.current_step = step
-        lesson.progress = progress
-        
-        print(f"  [{step}] {progress:.1f}% - {message}")
-        
-        if queue:
-            event_data = {
-                "type": "lesson_progress",
-                "lesson_id": lesson_id,
-                "status": lesson.status,
-                "step": step,
-                "progress": progress,
-                "message": message,
-            }
-            if extra:
-                event_data.update(extra)
-            await queue.put(event_data)
-    
-    try:
-        lesson.status = "running"
-        await send_progress("Initializing", 0, "Starting lesson generation...")
-        
-        # Use or create teacher crew
-        if preloaded_teacher is None:
-            print("[INFO] Creating new TeacherCrew instance...")
-            teacher = TeacherCrew(
-                use_internet=request.use_internet,
-                output_dir=LESSONS_DIR,
-                verbose=True,
-            )
-        else:
-            print("[INFO] Using preloaded teacher crew")
-            teacher = preloaded_teacher
-            if request.use_internet:
-                teacher.enable_internet()
-            else:
-                teacher.disable_internet()
-        
-        await send_progress("Research", 25, "Gathering information...")
-        
-        # Run teaching synchronously in executor
-        import concurrent.futures
-        loop = asyncio.get_event_loop()
-        
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            result = await loop.run_in_executor(
-                executor,
-                teacher.teach,
-                request.topic,
-                request.detail_level,
-            )
-        
-        await send_progress("Complete", 100, "Lesson generated!")
-        
-        # Store lesson content
-        lesson.domain = result.domain
-        lesson.lesson = LessonContent(
-            overview=result.lesson.overview,
-            key_concepts=result.lesson.key_concepts,
-            examples=result.lesson.examples,
-            further_reading=result.lesson.further_reading,
-            quiz_questions=result.lesson.quiz_questions,
-        )
-        lesson.status = "completed"
-        lesson.end_time = datetime.now().isoformat()
-        
-        # Send completion event
-        if queue:
-            await queue.put({
-                "type": "lesson_complete",
-                "lesson_id": lesson_id,
-                "status": "completed",
-                "lesson": lesson.lesson.dict(),
-            })
-        
-        print(f"\n[COMPLETE] Lesson generated: {lesson_id}")
-        
-    except Exception as e:
-        print(f"[ERROR] Lesson failed: {e}")
-        lesson.status = "error"
-        lesson.error = str(e)
-        lesson.end_time = datetime.now().isoformat()
-        
-        if queue:
-            await queue.put({
-                "type": "error",
-                "lesson_id": lesson_id,
-                "status": "error",
-                "message": str(e),
-            })
-
-
-@app.get("/api/lessons", response_model=List[LessonSession])
-async def list_lessons():
-    """List all lesson sessions."""
-    return list(lessons.values())
-
-
-@app.get("/api/lessons/{lesson_id}", response_model=LessonSession)
-async def get_lesson(lesson_id: str):
-    """Get a specific lesson."""
-    if lesson_id not in lessons:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    return lessons[lesson_id]
-
-
-@app.get("/api/lessons/{lesson_id}/stream")
-async def stream_lesson(lesson_id: str):
-    """Stream lesson progress via SSE."""
-    if lesson_id not in lessons:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    
-    queue = lesson_progress_queues.get(lesson_id)
-    if not queue:
-        raise HTTPException(status_code=404, detail="Lesson stream not available")
-    
-    async def event_stream() -> AsyncGenerator[str, None]:
-        # Send initial state
-        lesson = lessons[lesson_id]
-        yield f"data: {json.dumps({'type': 'lesson_started', 'topic': lesson.topic, 'status': lesson.status})}\n\n"
-        
-        try:
-            while True:
-                try:
-                    progress = await asyncio.wait_for(queue.get(), timeout=30)
-                    yield f"data: {json.dumps(progress)}\n\n"
-                    
-                    if progress.get("status") in ["completed", "error"]:
-                        break
-                except asyncio.TimeoutError:
-                    yield f": keepalive\n\n"
-        except asyncio.CancelledError:
-            pass
-    
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        }
-    )
-
 @app.get("/api/settings", response_model=Settings)
 async def get_settings():
     """Get current settings."""
@@ -1259,6 +802,249 @@ async def list_adapters():
 
 
 # ============================================================================
+# Human vs AI Debate Endpoints
+# ============================================================================
+
+@app.post("/api/debates/{debate_id}/human-turn")
+async def submit_human_turn(debate_id: str, request: HumanTurnRequest):
+    """Submit a human's argument in human_vs_ai mode."""
+    if debate_id not in debates:
+        raise HTTPException(status_code=404, detail="Debate not found")
+    
+    debate = debates[debate_id]
+    
+    # Validate debate state
+    if debate.status not in ["running", "waiting_for_human", "pending"]:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Debate not accepting input, current status: {debate.status}"
+        )
+    
+    if not request.argument.strip():
+        raise HTTPException(status_code=400, detail="Argument cannot be empty")
+    
+    # Store the human argument - this is a simplified implementation
+    # Full turn-taking would require refactoring DebateCrew.run_debate()
+    # For now, we acknowledge the submission
+    print(f"[HUMAN TURN] Debate {debate_id}: received argument ({len(request.argument)} chars)")
+    
+    return {
+        "status": "submitted",
+        "message": "Argument received successfully. Note: Full human vs AI turn-taking is not yet implemented."
+    }
+
+
+# ============================================================================
+# Lesson (Teacher) Endpoints
+# ============================================================================
+
+async def run_teacher_lesson(lesson_id: str, request: LessonRequest):
+    """Run lesson generation using TeacherCrew in background."""
+    lesson = lessons.get(lesson_id)
+    if not lesson:
+        print(f"[ERROR] Lesson {lesson_id} not found")
+        return
+    
+    queue = lesson_progress_queues.get(lesson_id)
+    
+    print(f"\n{'='*60}")
+    print(f"STARTING LESSON GENERATION: {lesson_id}")
+    print(f"Topic: {request.topic}")
+    print(f"Level: {request.detail_level}")
+    print(f"{'='*60}\n")
+    
+    async def send_progress(step: str, progress: float, message: str):
+        """Send lesson progress update."""
+        lesson.current_step = step
+        lesson.progress = progress
+        print(f"  [{step}] {progress:.1f}% - {message}")
+        
+        if queue:
+            await queue.put({
+                "type": "lesson_progress",
+                "lesson_id": lesson_id,
+                "status": lesson.status,
+                "step": step,
+                "progress": progress,
+                "message": message,
+            })
+    
+    try:
+        lesson.status = "running"
+        # Send lesson_started event so frontend can set topic and status
+        if queue:
+            await queue.put({
+                "type": "lesson_started",
+                "lesson_id": lesson_id,
+                "topic": request.topic,
+                "status": "running",
+            })
+        await send_progress("Initializing", 0, "Loading TeacherCrew...")
+        
+        # Use preloaded teacher crew or create new one
+        if TEACHER_AVAILABLE:
+            teacher = preloaded_teacher_crew
+            if teacher is None:
+                await send_progress("Loading", 10, "Creating TeacherCrew instance...")
+                teacher = TeacherCrew(
+                    use_internet=request.use_internet,
+                    output_dir=LESSONS_DIR,
+                    verbose=True,
+                )
+            else:
+                if request.use_internet:
+                    teacher.enable_internet()
+                else:
+                    teacher.disable_internet()
+            
+            await send_progress("Researching", 20, "Gathering research on topic...")
+            
+            # Run teaching in thread pool
+            import concurrent.futures
+            loop = asyncio.get_event_loop()
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    teacher.teach,
+                    request.topic,
+                    request.detail_level,
+                )
+            
+            await send_progress("Generating", 80, "Structuring lesson content...")
+            
+            # Convert result to our model
+            lesson.domain = result.domain
+            lesson.lesson = LessonSection(
+                topic=result.lesson.topic,
+                overview=result.lesson.overview,
+                key_concepts=result.lesson.key_concepts or [],
+                examples=result.lesson.examples or [],
+                quiz_questions=result.lesson.quiz_questions or [],
+            )
+            lesson.end_time = datetime.now().isoformat()
+            lesson.progress = 100
+            lesson.current_step = "Completed"
+            
+            # Send completion progress (while status is still "running" so SSE doesn't close)
+            await send_progress("Completed", 100, "Lesson generation complete!")
+            
+            # Now send the lesson_complete event with the lesson data
+            # This will trigger SSE stream to close after client receives the lesson
+            lesson.status = "completed"
+            if queue:
+                await queue.put({
+                    "type": "lesson_complete",
+                    "lesson_id": lesson_id,
+                    "status": "completed",
+                    "lesson": lesson.lesson.model_dump() if lesson.lesson else None,
+                })
+        else:
+            raise Exception(f"TeacherCrew not available: {TEACHER_ERROR}")
+            
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Lesson generation failed: {e}")
+        traceback.print_exc()
+        
+        lesson.status = "error"
+        lesson.error = str(e)
+        
+        if queue:
+            await queue.put({
+                "type": "error",
+                "lesson_id": lesson_id,
+                "status": "error",
+                "message": str(e),
+            })
+
+
+@app.post("/api/lessons", response_model=LessonResponse)
+async def create_lesson(request: LessonRequest, background_tasks: BackgroundTasks):
+    """Create and generate a new lesson using TeacherCrew."""
+    if not TEACHER_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"TeacherCrew is not available: {TEACHER_ERROR}"
+        )
+    
+    lesson_id = f"lesson-{uuid.uuid4().hex[:12]}"
+    
+    lesson = LessonSession(
+        id=lesson_id,
+        topic=request.topic,
+        domain="unknown",  # Will be determined during generation
+        detail_level=request.detail_level,
+        status="pending",
+        start_time=datetime.now().isoformat(),
+    )
+    
+    lessons[lesson_id] = lesson
+    lesson_progress_queues[lesson_id] = asyncio.Queue()
+    
+    # Start lesson generation in background
+    background_tasks.add_task(run_teacher_lesson, lesson_id, request)
+    
+    return LessonResponse(
+        id=lesson_id,
+        status="created",
+        message="Lesson created and generation starting..."
+    )
+
+
+@app.get("/api/lessons/{lesson_id}", response_model=LessonSession)
+async def get_lesson(lesson_id: str):
+    """Get lesson details."""
+    if lesson_id not in lessons:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    return lessons[lesson_id]
+
+
+@app.get("/api/lessons", response_model=List[LessonSession])
+async def list_lessons(limit: int = 50, offset: int = 0):
+    """List all lessons with pagination."""
+    all_lessons = list(lessons.values())
+    all_lessons.sort(key=lambda l: l.start_time, reverse=True)
+    return all_lessons[offset:offset + limit]
+
+
+@app.get("/api/lessons/{lesson_id}/stream")
+async def stream_lesson_progress(lesson_id: str):
+    """Server-Sent Events stream for real-time lesson generation progress."""
+    if lesson_id not in lessons:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    async def event_stream() -> AsyncGenerator[str, None]:
+        queue = lesson_progress_queues.get(lesson_id)
+        if not queue:
+            queue = asyncio.Queue()
+            lesson_progress_queues[lesson_id] = queue
+        
+        try:
+            while True:
+                try:
+                    progress = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {json.dumps(progress)}\n\n"
+                    
+                    if progress.get("status") in ["completed", "error"]:
+                        break
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -1269,8 +1055,10 @@ if __name__ == "__main__":
     print("Debate Simulator XP - API Server")
     print("=" * 60)
     print(f"CrewAI Available: {CREWAI_AVAILABLE}")
+    print(f"TeacherCrew Available: {TEACHER_AVAILABLE}")
     print(f"Project Root: {PROJECT_ROOT}")
     print(f"Runs Directory: {RUNS_DIR}")
+    print(f"Lessons Directory: {LESSONS_DIR}")
     print(f"Server Port: 5040")
     print("=" * 60)
     

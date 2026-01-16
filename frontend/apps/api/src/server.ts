@@ -15,7 +15,6 @@ import { registerTopicRoutes } from "./routes/topics";
 import { registerDebateRoutes } from "./routes/debates";
 import { registerProfileRoutes } from "./routes/profile";
 import { registerAuthRoutes } from "./routes/auth";
-import { registerAgentRoutes } from "./routes/agents";
 
 export const buildServer = () => {
   const env = getEnv();
@@ -61,7 +60,6 @@ export const buildServer = () => {
   registerDebateRoutes(app);
   registerProfileRoutes(app);
   registerAuthRoutes(app);
-  registerAgentRoutes(app);
 
   return app;
 };

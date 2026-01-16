@@ -39,7 +39,7 @@ export const LessonCreatorWindow: React.FC<LessonCreatorWindowProps> = ({ window
 
         try {
             // Call the teaching API
-            const response = await fetch('http://localhost:5040/api/lessons', {
+            const response = await fetch('/api/lessons', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

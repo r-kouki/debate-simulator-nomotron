@@ -82,7 +82,7 @@ export const DebateViewerWindow: React.FC<DebateViewerWindowProps> = ({
     addLog(`Connecting to CrewAI backend for debate: ${activeDebate.id}`, 'info');
     setConnectionStatus('connecting');
 
-    const sseUrl = `http://localhost:5040/api/debates/${activeDebate.id}/stream`;
+    const sseUrl = `/api/debates/${activeDebate.id}/stream`;
     addLog(`SSE URL: ${sseUrl}`, 'info');
 
     const eventSource = new EventSource(sseUrl);

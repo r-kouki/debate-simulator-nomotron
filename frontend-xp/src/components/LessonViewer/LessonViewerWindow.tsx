@@ -37,6 +37,7 @@ export const LessonViewerWindow: React.FC<LessonViewerWindowProps> = ({
 
     const eventSourceRef = useRef<EventSource | null>(null);
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const isCompletedRef = useRef<boolean>(false);
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
@@ -54,7 +55,7 @@ export const LessonViewerWindow: React.FC<LessonViewerWindowProps> = ({
         addLog(`Connecting to lesson stream: ${lessonId}`, 'info');
         setConnectionStatus('connecting');
 
-        const sseUrl = `http://localhost:5040/api/lessons/${lessonId}/stream`;
+        const sseUrl = `/api/lessons/${lessonId}/stream`;
         const eventSource = new EventSource(sseUrl);
         eventSourceRef.current = eventSource;
 
@@ -84,6 +85,7 @@ export const LessonViewerWindow: React.FC<LessonViewerWindowProps> = ({
                     case 'lesson_complete':
                         addLog('Lesson generated!', 'success');
                         setStatus('completed');
+                        isCompletedRef.current = true;
                         if (data.lesson) {
                             setLesson(data.lesson);
                         }
@@ -108,8 +110,14 @@ export const LessonViewerWindow: React.FC<LessonViewerWindowProps> = ({
 
         eventSource.onerror = (error) => {
             console.error('SSE Error:', error);
-            addLog('Connection error', 'error');
-            setConnectionStatus('error');
+            // Only log error if we haven't received the complete lesson yet
+            // The SSE connection closing after completion is normal behavior
+            if (!isCompletedRef.current) {
+                addLog('Connection error', 'error');
+                setConnectionStatus('error');
+            } else {
+                setConnectionStatus('idle');
+            }
             eventSource.close();
         };
 
@@ -125,7 +133,7 @@ export const LessonViewerWindow: React.FC<LessonViewerWindowProps> = ({
 
         const fetchLesson = async () => {
             try {
-                const response = await fetch(`http://localhost:5040/api/lessons/${lessonId}`);
+                const response = await fetch(`/api/lessons/${lessonId}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.status === 'completed' && data.lesson) {

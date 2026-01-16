@@ -71,7 +71,7 @@ export const debateApi = {
     onProgress: (data: DebateProgress) => void,
     onError?: (error: Event) => void
   ): (() => void) => {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5040/api';
+    const baseUrl = import.meta.env.VITE_API_URL || '/api';
     const eventSource = new EventSource(`${baseUrl}/debates/${id}/stream`);
 
     eventSource.onmessage = (event) => {

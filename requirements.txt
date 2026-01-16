@@ -16,7 +16,7 @@ cbor2==5.8.0
 certifi==2025.11.12
 cffi==2.0.0
 charset-normalizer==3.4.4
-click==8.3.1
+click==8.1.8
 cloudpickle==3.1.2
 compressed-tensors==0.12.2
 cryptography==46.0.3
@@ -65,7 +65,7 @@ lm-format-enforcer==0.11.3
 loguru==0.7.3
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
-mcp==1.25.0
+mcp==1.16.0
 mdurl==0.1.2
 mistral_common==1.8.8
 model-hosting-container-standards==0.1.12
@@ -175,9 +175,25 @@ xgrammar==0.1.27
 xxhash==3.6.0
 yarl==1.22.0
 
-# CrewAI dependencies
-# Installed with --no-deps to avoid conflicts with vllm
-# Install: pip install --no-deps crewai==1.8.0 crewai-tools==1.8.0
-# Requires vLLM server running as OpenAI-compatible API (see scripts/start_vllm_server.sh)
-crewai==1.8.0
-crewai-tools==1.8.0
+# CrewAI dependencies are installed separately with --no-deps in Dockerfile
+# to avoid conflicts with vllm's openai version requirements
+# The following are transitive dependencies of crewai/chromadb/instructor that need to be installed:
+json-repair==0.25.3
+json5==0.10.0
+jsonref==1.1.0
+aiosqlite==0.21.0
+appdirs==1.4.4
+overrides==7.7.0
+posthog>=2.4.0
+tenacity>=8.2.0
+docstring-parser>=0.15
+opentelemetry-api>=1.0.0
+opentelemetry-sdk>=1.0.0
+opentelemetry-exporter-otlp-proto-grpc>=1.0.0
+opentelemetry-exporter-otlp-proto-http>=1.0.0
+opentelemetry-instrumentation-fastapi>=0.34b0
+opentelemetry-instrumentation>=0.34b0
+onnxruntime>=1.14.0
+bcrypt>=4.0.0
+pypdf>=3.0.0
+litellm>=1.0.0

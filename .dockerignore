@@ -1,0 +1,34 @@
+# Docker-specific ignores
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+*.md
+*.txt
+!requirements.txt
+
+# Frontend build artifacts (we build in container)
+frontend-xp/node_modules/
+frontend-xp/dist/
+
+# Local development files
+.env
+.env.local
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Tests
+tests/
+*.test.py
+
+# Documentation
+docs/
+
+# Large files that should be mounted
+models/base/
+runs/

@@ -103,17 +103,17 @@ class DebateService:
         params = {
             "easy": {
                 "temperature": 0.8,
-                "max_new_tokens": 80,  # Short, punchy responses
+                "max_new_tokens": 150,  # Faster chat-like responses
                 "style": "casual, conversational, and easy to understand",
             },
             "medium": {
                 "temperature": 0.7,
-                "max_new_tokens": 120,  # Concise but substantive
+                "max_new_tokens": 200,  # Balanced speed and depth
                 "style": "balanced, well-reasoned, using both logic and examples",
             },
             "hard": {
                 "temperature": 0.6,
-                "max_new_tokens": 160,  # Thorough but focused
+                "max_new_tokens": 250,  # Still concise but thorough
                 "style": "rigorous, evidence-based, with sophisticated rhetorical techniques",
             },
         }
@@ -297,42 +297,41 @@ Respond with your counterargument:"""
         Score a human argument.
 
         Uses heuristics similar to JudgeAgent but adapted for live scoring.
-        Stricter scoring - players must EARN points.
         """
         message_lower = message.lower()
         word_count = len(message.split())
 
         # Argument strength (based on length and structure)
-        # Start at 30, require more words and logic for high scores
-        length_score = min(word_count / 50, 1.0) * 35 + 30  # 30-65 range
-        logical_markers = ['because', 'therefore', 'thus', 'however', 'furthermore', 'moreover', 'consequently', 'hence']
-        logic_bonus = sum(8 for m in logical_markers if m in message_lower)
+        length_score = min(word_count / 30, 1.0) * 40 + 50
+        logical_markers = ['because', 'therefore', 'thus', 'however', 'furthermore', 'moreover']
+        logic_bonus = sum(5 for m in logical_markers if m in message_lower)
         argument_strength = min(int(length_score + logic_bonus), 100)
 
         # Evidence use (citations and data references)
-        # Base 35, require evidence to score well
-        evidence_markers = ['study', 'research', 'data', 'percent', '%', 'according', 'evidence', 'shows', 'statistics', 'report', 'survey']
+        evidence_markers = ['study', 'research', 'data', 'percent', '%', 'according', 'evidence', 'shows']
         evidence_count = sum(1 for m in evidence_markers if m in message_lower)
-        evidence_use = min(35 + evidence_count * 18, 100)
+        evidence_use = min(60 + evidence_count * 15, 100)
 
         # Civility (absence of hostile language)
-        hostile_markers = ['stupid', 'idiot', 'wrong', 'nonsense', 'ridiculous', 'dumb', 'ignorant', 'foolish']
+        hostile_markers = ['stupid', 'idiot', 'wrong', 'nonsense', 'ridiculous', 'dumb']
         hostile_count = sum(1 for m in hostile_markers if m in message_lower)
-        civility = max(85 - hostile_count * 25, 40)
+        civility = max(95 - hostile_count * 20, 50)
 
         # Relevance (topic keywords)
-        # Base 40, require topic engagement
         topic_words = set(session.topic_title.lower().split())
-        topic_words -= {'should', 'be', 'the', 'a', 'an', 'is', 'are', 'in', 'of', 'to', 'for'}
+        topic_words.discard('should')
+        topic_words.discard('be')
+        topic_words.discard('the')
         message_words = set(message_lower.split())
         overlap = len(topic_words & message_words)
-        relevance = min(40 + overlap * 20, 100)
+        relevance = min(60 + overlap * 15, 100)
 
-        # Add some randomness for variety (reduced range)
-        argument_strength = max(25, min(100, argument_strength + random.randint(-3, 3)))
-        evidence_use = max(25, min(100, evidence_use + random.randint(-3, 3)))
-        civility = max(40, min(100, civility + random.randint(-2, 2)))
-        relevance = max(25, min(100, relevance + random.randint(-3, 3)))
+        # Add some randomness for variety
+        import random
+        argument_strength = max(50, min(100, argument_strength + random.randint(-5, 5)))
+        evidence_use = max(50, min(100, evidence_use + random.randint(-5, 5)))
+        civility = max(50, min(100, civility + random.randint(-3, 3)))
+        relevance = max(50, min(100, relevance + random.randint(-5, 5)))
 
         return UpdatedScores(
             argumentStrength=argument_strength,
